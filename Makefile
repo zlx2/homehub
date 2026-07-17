@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control format-control edge-up edge-check dev-up dev-check public-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control format-control edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -35,6 +35,12 @@ dev-check: ## Verify the portal, Control API, and development edge
 
 public-check: ## Verify trusted public HTTPS and anonymous access denial
 	@./deploy/scripts/check-running-public.sh
+
+beszel-bootstrap: ## Initialize Beszel data and its local agent identity
+	@sudo ./deploy/scripts/bootstrap-beszel.sh
+
+beszel-check: ## Verify the protected server panel and local agent
+	@./deploy/scripts/check-running-beszel.sh
 
 edge-down: ## Stop only this repository's development edge stack
 	@docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) down

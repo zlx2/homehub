@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"homehub.local/control/internal/auth"
 	"homehub.local/control/internal/catalog"
 	"homehub.local/control/internal/health"
 )
@@ -22,6 +23,29 @@ func (statuses staticStatuses) Snapshot() map[string]health.Result {
 		result[id] = status
 	}
 	return result
+}
+
+func TestForwardAuthRequiresAdminForServerPanel(t *testing.T) {
+	tests := []struct {
+		name      string
+		uri       string
+		scopes    []string
+		wantAllow bool
+	}{
+		{name: "admin panel", uri: "/server/", scopes: []string{"portal.view", "admin"}, wantAllow: true},
+		{name: "non-admin panel", uri: "/server/system", scopes: []string{"portal.view"}, wantAllow: false},
+		{name: "query does not bypass", uri: "/server?tab=system", scopes: []string{"portal.view"}, wantAllow: false},
+		{name: "similar path is not panel", uri: "/serverless", scopes: []string{"portal.view"}, wantAllow: true},
+		{name: "other protected service", uri: "/chat", scopes: []string{"portal.view"}, wantAllow: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			principal := auth.Principal{Username: "owner", Scopes: test.scopes}
+			if got := forwardAuthAllowed(principal, test.uri); got != test.wantAllow {
+				t.Fatalf("forwardAuthAllowed() = %v, want %v", got, test.wantAllow)
+			}
+		})
+	}
 }
 
 func TestServicesDoNotExposeInternalHealthURL(t *testing.T) {

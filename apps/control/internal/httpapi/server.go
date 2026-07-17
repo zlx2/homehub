@@ -127,10 +127,28 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
 		return
 	}
+	if !forwardAuthAllowed(principal, request.Header.Get("X-Forwarded-Uri")) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
+		return
+	}
 	writer.Header().Set("X-HomeHub-Principal-ID", principal.ID)
 	writer.Header().Set("X-HomeHub-Principal", principal.Username)
+	writer.Header().Set("X-HomeHub-Email", principal.Username+"@homehub.local")
 	writer.Header().Set("X-HomeHub-Scopes", strings.Join(principal.Scopes, " "))
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func forwardAuthAllowed(principal auth.Principal, forwardedURI string) bool {
+	path := strings.TrimSpace(strings.SplitN(forwardedURI, "?", 2)[0])
+	if path != "/server" && !strings.HasPrefix(path, "/server/") {
+		return true
+	}
+	for _, scope := range principal.Scopes {
+		if scope == "admin" {
+			return true
+		}
+	}
+	return false
 }
 
 func (api *server) beginSetup(writer http.ResponseWriter, request *http.Request) {

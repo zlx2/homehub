@@ -15,11 +15,14 @@ grants, and an AI gateway for independently deployable services.
 - Docker Compose for deployment and service discovery
 - Bitwarden Secrets Manager for production secrets
 
-The current stack includes PostgreSQL, HomeHub Control, the Svelte portal, and
-Traefik. The owner portal is available at `https://111.229.205.99` with a trusted
+The current stack includes PostgreSQL, HomeHub Control, the Svelte portal,
+Traefik, and a Beszel server-monitoring module. The owner portal is available at `https://111.229.205.99` with a trusted
 short-lived IP certificate. Owner authentication uses an Argon2id password,
 TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
 protection. Anonymous requests cannot read the service directory APIs.
+The monitoring panel is mounted at `/server/`, reuses the HomeHub session through
+ForwardAuth, and is restricted to the `admin` scope. Its local agent has no TCP
+listener and reaches Docker only through a loopback-bound read-only socket proxy.
 
 ## Development verification
 

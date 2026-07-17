@@ -30,6 +30,9 @@ services:
       VOLUMES: "0"
     networks:
       - docker-api
+      - agent-api
+    ports:
+      - "127.0.0.1:23750:2375"
     read_only: true
     tmpfs:
       - /run
@@ -217,6 +220,98 @@ services:
       homehub.visibility: owner
       homehub.share-enabled: "false"
 
+  beszel:
+    image: henrygd/beszel:0.18.7
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    user: "65532:65532"
+    environment:
+      APP_URL: https://111.229.205.99/server
+      TRUSTED_AUTH_HEADER: X-HomeHub-Email
+      DISABLE_PASSWORD_AUTH: "true"
+      CONTAINER_DETAILS: "false"
+      CHECK_UPDATES: "false"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,beszel
+      no_proxy: localhost,127.0.0.1,beszel
+    networks:
+      - edge
+      - management
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/data:/beszel_data
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/socket:/beszel_socket
+      - ../beszel/config.yml:/beszel_data/config.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-beszel-public.entrypoints: public-https
+      traefik.http.routers.homehub-beszel-public.rule: Path(`/server`) || PathPrefix(`/server/`)
+      traefik.http.routers.homehub-beszel-public.priority: "200"
+      traefik.http.routers.homehub-beszel-public.middlewares: homehub-forward-auth@file,homehub-strip-server@file,homehub-beszel-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-beszel-public.tls: "true"
+      traefik.http.services.homehub-beszel.loadbalancer.server.port: "8090"
+      homehub.id: server-monitor
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  beszel-agent:
+    image: henrygd/beszel-agent:0.18.7
+    restart: unless-stopped
+    depends_on:
+      - docker-socket-proxy
+    network_mode: host
+    user: "65532:65532"
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      KEY_FILE: /run/secrets/beszel_agent_key
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      DATA_DIR: /var/lib/beszel-agent
+      SKIP_SYSTEMD: "true"
+      SKIP_GPU: "true"
+      SMART_DEVICES: ""
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/agent-data:/var/lib/beszel-agent
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/socket:/beszel_socket
+    secrets:
+      - beszel_agent_key
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/agent", "health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
   acme-challenge:
     image: nginx:1.29.8-alpine
     restart: unless-stopped
@@ -300,6 +395,8 @@ networks:
   docker-api:
     name: homehub-docker-api
     internal: true
+  agent-api:
+    name: homehub-agent-api
   management:
     name: homehub-management
     internal: true
@@ -315,3 +412,5 @@ secrets:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/auth_encryption_key
   owner_setup_token:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/owner_setup_token
+  beszel_agent_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/beszel_agent_key

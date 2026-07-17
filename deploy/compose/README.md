@@ -27,7 +27,14 @@ with root privileges:
 
 ```sh
 sudo ./deploy/scripts/prepare-data-dirs.sh
+sudo ./deploy/scripts/bootstrap-beszel.sh
 ```
 
 This gives the PostgreSQL data directory to the UID used by the official image
 without making the platform data tree world-writable.
+
+The Beszel bootstrap creates its first local user and SSH identity without
+persisting the generated bootstrap password. Normal access is then delegated to
+HomeHub Control by the trusted `X-HomeHub-Email` header. The agent listens on a
+shared Unix socket and Docker access is limited to read-only endpoints exposed at
+`127.0.0.1:23750` for the host-networked agent.

@@ -19,6 +19,34 @@ http:
     homehub-compress:
       compress: {}
 
+    homehub-forward-auth:
+      forwardAuth:
+        address: http://control:8080/api/v1/auth/check
+        trustForwardHeader: false
+        authResponseHeaders:
+          - X-HomeHub-Principal-ID
+          - X-HomeHub-Principal
+          - X-HomeHub-Email
+          - X-HomeHub-Scopes
+
+    homehub-strip-server:
+      stripPrefix:
+        prefixes:
+          - /server
+
+    homehub-beszel-security-headers:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: >-
+          camera=(), microphone=(), geolocation=(), payment=(), usb=()
+        stsSeconds: 31536000
+        stsIncludeSubdomains: false
+        stsPreload: false
+        customResponseHeaders:
+          Server: ""
+
     homehub-https-redirect:
       redirectScheme:
         scheme: https
