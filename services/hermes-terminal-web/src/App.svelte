@@ -14,6 +14,7 @@
   let mobileMode = false;
   let composerFocused = false;
   let draft = '';
+  let lastPointerSendAt = 0;
 
   const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -77,11 +78,19 @@
     sendDraft();
   }
 
-  function keepComposerFocused(event: PointerEvent) {
-    // Prevent the button from taking focus on touch. Otherwise the textarea
-    // blurs, the mobile layout changes before `click`, and Safari can cancel
-    // the first tap because the button moved under the pointer.
+  function sendOnPointerDown(event: PointerEvent) {
+    // iOS may suppress the later `click` while an IME composition is active.
+    // Send on the earliest pointer event and keep the textarea focused so the
+    // button never moves between touch-down and touch-up.
     event.preventDefault();
+    lastPointerSendAt = performance.now();
+    sendDraft();
+  }
+
+  function sendOnClick() {
+    // Keyboard activation has no pointerdown. A touch/mouse click follows its
+    // pointerdown and is ignored here to prevent two interleaved submissions.
+    if (performance.now() - lastPointerSendAt > 500) sendDraft();
   }
 
   function focusInput() {
@@ -239,8 +248,8 @@
     <button
       type="button"
       disabled={connection !== 'connected'}
-      onpointerdown={keepComposerFocused}
-      onclick={sendDraft}
+      onpointerdown={sendOnPointerDown}
+      onclick={sendOnClick}
     >发送</button>
   </form>
 
