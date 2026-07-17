@@ -1,0 +1,24 @@
+{
+  "services": [
+    {
+      "id": "homehub-control",
+      "name": "HomeHub Control",
+      "description": "身份、权限、分享策略与服务目录的控制平面。",
+      "icon": "C",
+      "route": "/api/v1/system",
+      "visibility": "owner",
+      "share_enabled": false,
+      "health_url": "http://control:8080/health/live"
+    },
+    {
+      "id": "homehub-edge",
+      "name": "HomeHub Edge",
+      "description": "负责入口路由、流量治理与外部鉴权委托的Traefik数据平面。",
+      "icon": "E",
+      "route": "",
+      "visibility": "internal",
+      "share_enabled": false,
+      "health_url": "http://traefik:8081/ping"
+    }
+  ]
+}

@@ -15,7 +15,21 @@ grants, and an AI gateway for independently deployable services.
 - Docker Compose for deployment and service discovery
 - Bitwarden Secrets Manager for production secrets
 
-No production service is defined in this initial scaffold.
+The current development stack includes a loopback-only Traefik entry point,
+HomeHub Control, and the Svelte portal. Authentication is intentionally disabled
+until the next phase, so this stack must not be moved to the public port 443.
+
+## Development verification
+
+```sh
+make test-control
+make compose-config
+make dev-up
+make dev-check
+```
+
+The development portal is bound to `127.0.0.1:18080`. Traefik's development
+dashboard is bound to `127.0.0.1:18081`.
 
 ## Repository layout
 

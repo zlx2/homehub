@@ -60,6 +60,7 @@ services:
     networks:
       - edge
       - docker-api
+      - management
     volumes:
       - ../traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
       - ../traefik/dynamic:/etc/traefik/dynamic:ro
@@ -76,6 +77,109 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  control:
+    image: homehub/control:local
+    build:
+      context: ../..
+      dockerfile: apps/control/Dockerfile
+      args:
+        VERSION: ${HOMEHUB_VERSION:-dev}
+        COMMIT: ${HOMEHUB_COMMIT:-unknown}
+        BUILD_TIME: ${HOMEHUB_BUILD_TIME:-unknown}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    environment:
+      HOMEHUB_LISTEN_ADDRESS: :8080
+      HOMEHUB_CATALOG_FILE: /etc/homehub/services.json
+      HOMEHUB_ENVIRONMENT: development
+      HOMEHUB_LOG_LEVEL: info
+      HOMEHUB_HEALTH_INTERVAL: 5s
+      HOMEHUB_HEALTH_TIMEOUT: 2s
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: control,traefik,localhost,127.0.0.1
+      no_proxy: control,traefik,localhost,127.0.0.1
+    networks:
+      - edge
+      - backend
+      - management
+    volumes:
+      - ../catalog/services.json:/etc/homehub/services.json:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/homehub-control", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-control.entrypoints: web
+      traefik.http.routers.homehub-control.rule: PathPrefix(`/api`) || PathPrefix(`/health`)
+      traefik.http.routers.homehub-control.priority: "100"
+      traefik.http.routers.homehub-control.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.services.homehub-control.loadbalancer.server.port: "8080"
+      homehub.id: homehub-control
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  portal:
+    image: homehub/portal:local
+    build:
+      context: ../..
+      dockerfile: apps/portal/Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-portal.entrypoints: web
+      traefik.http.routers.homehub-portal.rule: PathPrefix(`/`)
+      traefik.http.routers.homehub-portal.priority: "1"
+      traefik.http.routers.homehub-portal.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.services.homehub-portal.loadbalancer.server.port: "8080"
+      homehub.id: homehub-portal
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
 
   postgres:
     image: postgres:18.4-alpine
@@ -120,6 +224,9 @@ networks:
     internal: true
   docker-api:
     name: homehub-docker-api
+    internal: true
+  management:
+    name: homehub-management
     internal: true
 
 secrets:

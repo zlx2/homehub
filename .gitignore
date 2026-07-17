@@ -27,6 +27,7 @@ node_modules/
 dist/
 .svelte-kit/
 coverage/
+.npm/
 
 # Editors and operating systems
 .idea/
