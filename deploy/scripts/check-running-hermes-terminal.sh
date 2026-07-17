@@ -3,6 +3,7 @@ set -euo pipefail
 
 systemctl --user is-active --quiet homehub-hermes-terminal.service
 curl --fail --silent --show-error --output /dev/null http://10.0.0.15:7681/hermes/
+test "$(docker inspect --format '{{.State.Health.Status}}' homehub-hermes-terminal-web-1)" = "healthy"
 
 public_status="$(curl --insecure --silent --show-error --output /dev/null \
   --write-out '%{http_code}' https://111.229.205.99/hermes/)"
@@ -14,4 +15,4 @@ case "${public_status}" in
     ;;
 esac
 
-echo "Hermes terminal host service is healthy and the public route requires HomeHub authentication."
+echo "Hermes terminal web client and host transport are healthy; the public route requires HomeHub authentication."

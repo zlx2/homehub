@@ -15,36 +15,52 @@ case "$(uname -m)" in
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "${tmp_dir}"' EXIT
-
 download() {
   local url="$1"
   local output="$2"
-  if ! curl --fail --silent --show-error --location --output "${output}" "${url}"; then
+  if ! curl --fail --silent --show-error --location --connect-timeout 5 --max-time 60 \
+    --output "${output}" "${url}"; then
     curl --fail --silent --show-error --location \
-      --proxy http://127.0.0.1:1081 --output "${output}" "${url}"
+      --connect-timeout 5 --max-time 60 --proxy http://127.0.0.1:1081 \
+      --output "${output}" "${url}"
   fi
 }
 
-download "${RELEASE_URL}/${asset}" "${tmp_dir}/${asset}"
-download "${RELEASE_URL}/SHA256SUMS" "${tmp_dir}/SHA256SUMS"
+if ! "${HOME}/.local/bin/ttyd" --version 2>/dev/null | grep -q "ttyd version ${TTYD_VERSION}"; then
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "${tmp_dir}"' EXIT
 
-expected="$(awk -v name="${asset}" '$2 == name || $2 == "*" name { print $1 }' "${tmp_dir}/SHA256SUMS")"
-if [[ -z "${expected}" ]]; then
-  echo "No checksum found for ${asset}." >&2
-  exit 1
+  download "${RELEASE_URL}/${asset}" "${tmp_dir}/${asset}"
+  download "${RELEASE_URL}/SHA256SUMS" "${tmp_dir}/SHA256SUMS"
+
+  expected="$(awk -v name="${asset}" '$2 == name || $2 == "*" name { print $1 }' "${tmp_dir}/SHA256SUMS")"
+  if [[ -z "${expected}" ]]; then
+    echo "No checksum found for ${asset}." >&2
+    exit 1
+  fi
+  echo "${expected}  ${tmp_dir}/${asset}" | sha256sum --check --status
+
+  install -d -m 0755 "${HOME}/.local/bin"
+  install -m 0755 "${tmp_dir}/${asset}" "${HOME}/.local/bin/ttyd"
 fi
-echo "${expected}  ${tmp_dir}/${asset}" | sha256sum --check --status
 
-install -d -m 0755 "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
-install -m 0755 "${tmp_dir}/${asset}" "${HOME}/.local/bin/ttyd"
+install -d -m 0755 "${HOME}/.local/bin" "${HOME}/.local/libexec" "${HOME}/.config/systemd/user"
+install -m 0755 \
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/run-hermes-terminal-session.sh" \
+  "${HOME}/.local/libexec/homehub-hermes-session"
 install -m 0644 \
   "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/systemd/homehub-hermes-terminal.service" \
   "${HOME}/.config/systemd/user/homehub-hermes-terminal.service"
 
 systemctl --user daemon-reload
-systemctl --user enable --now homehub-hermes-terminal.service
+systemctl --user enable homehub-hermes-terminal.service
+systemctl --user restart homehub-hermes-terminal.service
+
+if tmux has-session -t homehub-hermes 2>/dev/null; then
+  tmux set-option -t homehub-hermes status off
+  tmux set-option -t homehub-hermes window-size latest
+  tmux set-window-option -t homehub-hermes aggressive-resize on
+fi
 
 "${HOME}/.local/bin/ttyd" --version
 systemctl --user --no-pager --full status homehub-hermes-terminal.service

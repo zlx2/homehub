@@ -18,10 +18,12 @@ duplicate mature existing software.
 ## Decision
 
 - Keep Hermes Agent installed and executed natively as the `ubuntu` user.
-- Run ttyd 1.7.7 as a user-level systemd service on the host.
+- Run ttyd 1.7.7 as a user-level systemd service on the host. It remains the
+  PTY and WebSocket transport rather than the public page.
 - Run `hermes --tui` inside a persistent tmux session named
   `homehub-hermes`.
-- Publish ttyd only through the existing HomeHub `/hermes/` route.
+- Serve a mobile-first Svelte/xterm.js client at `/hermes/`. Only its ttyd
+  `/hermes/token` and `/hermes/ws` requests are forwarded to the host.
 - Reuse HomeHub's owner session through Traefik ForwardAuth. Hermes Terminal
   does not implement another login or consume HomeHub identity headers.
 - Do not expose this module through share links.
@@ -33,8 +35,10 @@ duplicate mature existing software.
 ## Consequences
 
 The browser receives the same TUI, slash commands, session picker, tools, and
-host environment as an SSH terminal. Closing the browser detaches the tmux
-client without ending Hermes, and a later browser can reattach.
+host environment as an SSH terminal. The custom client adds responsive sizing,
+a restrained ANSI palette, fullscreen and font controls, and mobile special
+keys without interpreting Hermes messages. Closing the browser detaches the
+tmux client without ending Hermes, and a later browser can reattach.
 
 This module intentionally has the same effective host privileges as the
 owner's native Hermes process. It is therefore owner-only and is a special host

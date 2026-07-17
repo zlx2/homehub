@@ -1,15 +1,22 @@
 http:
   routers:
-    homehub-hermes-public:
+    homehub-hermes-transport:
+      entryPoints:
+        - web
+      rule: Path(`/hermes/token`) || Path(`/hermes/ws`)
+      priority: 300
+      service: homehub-hermes-transport
+
+    homehub-hermes-transport-public:
       entryPoints:
         - public-https
-      rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
-      priority: 200
+      rule: Path(`/hermes/token`) || Path(`/hermes/ws`)
+      priority: 300
       middlewares:
         - homehub-strip-untrusted-identity
         - homehub-forward-auth
         - homehub-hermes-security-headers
-      service: homehub-hermes
+      service: homehub-hermes-transport
       tls: {}
 
   middlewares:
@@ -26,7 +33,7 @@ http:
           Server: ""
 
   services:
-    homehub-hermes:
+    homehub-hermes-transport:
       loadBalancer:
         passHostHeader: true
         servers:

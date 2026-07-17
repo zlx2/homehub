@@ -26,9 +26,10 @@ The monitoring panel is mounted at `/server/`, reuses the HomeHub session throug
 ForwardAuth, maps an authenticated HomeHub administrator to its internal owner
 account, and is restricted to the `admin` scope. Its local agent has no TCP
 listener and reaches Docker only through a loopback-bound read-only socket proxy.
-The Hermes module is mounted at `/hermes/` and exposes the existing native
-`hermes --tui` through ttyd and a persistent tmux session. It is an owner-only
-host integration; Hermes data and configuration remain outside HomeHub.
+The Hermes module is mounted at `/hermes/`. A mobile-first Svelte/xterm.js
+client connects to host-native ttyd, which exposes the existing `hermes --tui`
+through a persistent tmux session. It is an owner-only host integration;
+Hermes data and configuration remain outside HomeHub.
 
 Service access is deny-by-default. Administrators can access every registered
 service; other principals only see and reach services explicitly marked as
@@ -78,6 +79,7 @@ make test-sdk-go
 make test-sdk-rust
 make test-drop
 make test-ai-gateway
+make test-hermes-terminal
 make compose-config
 make dev-up
 make dev-check

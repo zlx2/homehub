@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu
 Environment=HOME=/home/ubuntu
 Environment=HERMES_HOME=/home/ubuntu/.hermes
 Environment=PATH=/home/ubuntu/.hermes/hermes-agent/venv/bin:/home/ubuntu/.hermes/hermes-agent/node_modules/.bin:/home/ubuntu/.nvm/versions/node/v23.11.1/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/ubuntu/.local/bin/ttyd --interface 10.0.0.15 --port 7681 --base-path /hermes --writable --check-origin --client-option fontSize=15 --client-option cursorBlink=true /usr/bin/tmux new-session -A -s homehub-hermes /home/ubuntu/.local/bin/hermes --tui
+ExecStart=/home/ubuntu/.local/bin/ttyd --interface 10.0.0.15 --port 7681 --base-path /hermes --writable --check-origin /home/ubuntu/.local/libexec/homehub-hermes-session
 Restart=on-failure
 RestartSec=2
 KillMode=process

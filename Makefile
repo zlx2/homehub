@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-ai-gateway format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-ai-gateway test-hermes-terminal format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -35,6 +35,9 @@ test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
 test-ai-gateway: ## Run AI Gateway tests in the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \
 		-v "$(CURDIR):/repo:ro" -w /repo/services/ai-gateway golang:1.26.5-alpine3.24 go test ./...
+
+test-hermes-terminal: ## Type-check and build the Hermes web terminal
+	@docker build --network host -f services/hermes-terminal-web/Dockerfile -t homehub/hermes-terminal-web:test .
 
 format-drop: ## Format Drop Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/drop:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal

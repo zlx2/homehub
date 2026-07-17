@@ -223,6 +223,61 @@ services:
       homehub.visibility: owner
       homehub.share-enabled: "false"
 
+  hermes-terminal-web:
+    image: homehub/hermes-terminal-web:local
+    build:
+      context: ../..
+      dockerfile: services/hermes-terminal-web/Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,hermes-terminal-web
+      no_proxy: localhost,127.0.0.1,hermes-terminal-web
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:uid=101,gid=101,mode=0750
+      - /var/run:uid=101,gid=101,mode=0750
+      - /tmp:uid=101,gid=101,mode=0750
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-hermes-web.entrypoints: web
+      traefik.http.routers.homehub-hermes-web.rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
+      traefik.http.routers.homehub-hermes-web.priority: "200"
+      traefik.http.routers.homehub-hermes-web.service: homehub-hermes-web
+      traefik.http.routers.homehub-hermes-web-public.entrypoints: public-https
+      traefik.http.routers.homehub-hermes-web-public.rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
+      traefik.http.routers.homehub-hermes-web-public.priority: "200"
+      traefik.http.routers.homehub-hermes-web-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-hermes-security-headers@file
+      traefik.http.routers.homehub-hermes-web-public.tls: "true"
+      traefik.http.services.homehub-hermes-web.loadbalancer.server.port: "8080"
+      homehub.id: hermes-terminal
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
   drop:
     image: homehub/drop:local
     build:

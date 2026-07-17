@@ -38,7 +38,7 @@
       "route": "/hermes/",
       "visibility": "owner",
       "share_enabled": false,
-      "health_url": "http://10.0.0.15:7681/hermes/"
+      "health_url": "http://hermes-terminal-web:8080/health"
     },
     {
       "id": "ai-gateway",
