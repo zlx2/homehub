@@ -4,11 +4,13 @@ set -eu
 data_root=${HOMEHUB_DATA_ROOT:-/srv/homehub}
 
 install -d -m 0750 "$data_root"
-install -d -o 999 -g 999 -m 0700 "$data_root/postgres"
+install -d -o 70 -g 70 -m 0700 "$data_root/postgres"
 install -d -m 0750 "$data_root/services"
 install -d -m 0750 "$data_root/files"
 install -d -m 0750 "$data_root/backups"
 install -d -m 0750 "$data_root/runtime"
 install -d -m 0700 "$data_root/runtime/secrets"
+install -d -m 0755 "$data_root/runtime/acme-webroot/.well-known/acme-challenge"
+install -d -m 0700 "$data_root/runtime/tls"
 
 printf '%s\n' "Prepared persistent directories under $data_root."

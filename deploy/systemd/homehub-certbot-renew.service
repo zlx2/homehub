@@ -1,0 +1,12 @@
+[Unit]
+Description=Renew HomeHub public IP certificate
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/certbot renew --quiet --no-random-sleep-on-renew
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt /srv/homehub/runtime/tls /srv/homehub/runtime/acme-webroot
+NoNewPrivileges=true

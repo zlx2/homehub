@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"homehub.local/control/internal/auth"
 	"homehub.local/control/internal/catalog"
 	"homehub.local/control/internal/config"
 	"homehub.local/control/internal/health"
@@ -59,15 +60,31 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("load service catalog: %w", err)
 	}
+	authService, err := auth.Open(context.Background(), auth.Config{
+		Host:               cfg.DatabaseHost,
+		Port:               cfg.DatabasePort,
+		Database:           cfg.DatabaseName,
+		User:               cfg.DatabaseUser,
+		PasswordFile:       cfg.DatabasePasswordFile,
+		EncryptionKeyFile:  cfg.AuthKeyFile,
+		BootstrapTokenFile: cfg.BootstrapTokenFile,
+	})
+	if err != nil {
+		return fmt.Errorf("initialize authentication: %w", err)
+	}
+	defer authService.Close()
 
 	monitor := health.NewMonitor(services, cfg.HealthInterval, cfg.HealthTimeout)
 	handler := httpapi.New(httpapi.Options{
-		Logger:      logger,
-		Services:    services,
-		Statuses:    monitor,
-		Version:     version,
-		Commit:      commit,
-		Environment: cfg.Environment,
+		Logger:         logger,
+		Services:       services,
+		Statuses:       monitor,
+		Version:        version,
+		Commit:         commit,
+		Environment:    cfg.Environment,
+		Auth:           authService,
+		AllowedOrigins: cfg.AllowedOrigins,
+		SecureCookies:  cfg.SecureCookies,
 	})
 
 	server := &http.Server{

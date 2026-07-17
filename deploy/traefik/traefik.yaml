@@ -23,6 +23,14 @@ entryPoints:
       insecure: false
   admin:
     address: ":8081"
+  public-web:
+    address: ":8082"
+    forwardedHeaders:
+      insecure: false
+  public-https:
+    address: ":8443"
+    forwardedHeaders:
+      insecure: false
 
 providers:
   docker:

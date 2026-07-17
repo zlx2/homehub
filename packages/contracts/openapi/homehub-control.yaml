@@ -1,46 +1,141 @@
 openapi: 3.1.0
 info:
   title: HomeHub Control API
-  version: 0.1.0
-  description: Development contract for the HomeHub control plane.
+  version: 0.2.0
+  description: Owner authentication and service-directory contract for HomeHub.
 servers:
-  - url: /
+  - url: https://111.229.205.99
 paths:
   /health/live:
     get:
       operationId: live
       responses:
-        "200":
-          description: Process is alive.
+        "200": { description: Process is alive. }
   /health/ready:
     get:
       operationId: ready
       responses:
+        "200": { description: Control and its database are ready. }
+  /api/v1/auth/session:
+    get:
+      operationId: getAuthSession
+      responses:
         "200":
-          description: Required local configuration has loaded.
+          description: Authentication and first-run setup state.
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200": { description: Session created. }
+        "401": { description: Username, password, or TOTP was invalid. }
+        "429": { description: Login rate limit reached. }
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      security: [{ ownerSession: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204": { description: Session revoked. }
+        "403": { description: CSRF validation failed. }
+  /api/v1/auth/check:
+    get:
+      operationId: checkAuthentication
+      security: [{ ownerSession: [] }]
+      responses:
+        "204": { description: Valid session; identity headers are returned for forward-auth. }
+        "401": { description: Authentication is required. }
+  /api/v1/setup/begin:
+    post:
+      operationId: beginOwnerSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeginSetupRequest"
+      responses:
+        "201": { description: Pending owner setup with TOTP provisioning data. }
+        "401": { description: Bootstrap token was invalid or expired. }
+        "409": { description: Owner setup is no longer available. }
+  /api/v1/setup/confirm:
+    post:
+      operationId: confirmOwnerSetup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmSetupRequest"
+      responses:
+        "201": { description: Owner activated and session created. }
+        "401": { description: TOTP code was invalid. }
   /api/v1/system:
     get:
       operationId: getSystem
+      security: [{ ownerSession: [] }]
       responses:
-        "200":
-          description: HomeHub build and environment information.
+        "200": { description: HomeHub build and environment information. }
+        "401": { description: Authentication is required. }
   /api/v1/services:
     get:
       operationId: listServices
+      security: [{ ownerSession: [] }]
       responses:
-        "200":
-          description: Registered services with sanitized health state.
+        "200": { description: Registered services with sanitized health state. }
+        "401": { description: Authentication is required. }
   /api/v1/services/{id}:
     get:
       operationId: getService
+      security: [{ ownerSession: [] }]
       parameters:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
+          schema: { type: string }
       responses:
-        "200":
-          description: One registered service.
-        "404":
-          description: Service is not registered.
+        "200": { description: One registered service. }
+        "401": { description: Authentication is required. }
+        "404": { description: Service is not registered. }
+components:
+  securitySchemes:
+    ownerSession:
+      type: apiKey
+      in: cookie
+      name: __Host-homehub_session
+  parameters:
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password, totp_code]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64 }
+        password: { type: string, minLength: 12, maxLength: 256 }
+        totp_code: { type: string, pattern: "^[0-9]{6}$" }
+    BeginSetupRequest:
+      type: object
+      additionalProperties: false
+      required: [bootstrap_token, username, password]
+      properties:
+        bootstrap_token: { type: string }
+        username: { type: string, pattern: "^[a-zA-Z0-9_.-]{3,64}$" }
+        password: { type: string, minLength: 12, maxLength: 256 }
+    ConfirmSetupRequest:
+      type: object
+      additionalProperties: false
+      required: [setup_id, totp_code]
+      properties:
+        setup_id: { type: string, format: uuid }
+        totp_code: { type: string, pattern: "^[0-9]{6}$" }

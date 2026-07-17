@@ -1,0 +1,13 @@
+tls:
+  certificates:
+    - certFile: /run/homehub-tls/fullchain.pem
+      keyFile: /run/homehub-tls/privkey.pem
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /run/homehub-tls/fullchain.pem
+        keyFile: /run/homehub-tls/privkey.pem
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: false

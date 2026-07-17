@@ -38,7 +38,8 @@ func TestServicesDoNotExposeInternalHealthURL(t *testing.T) {
 				Message:   `Get "http://secret-internal-name:8080/health/live": connection refused`,
 			},
 		},
-		Version: "test",
+		Version:             "test",
+		DisableAuthForTests: true,
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/services", nil)
@@ -58,8 +59,9 @@ func TestServicesDoNotExposeInternalHealthURL(t *testing.T) {
 
 func TestUnknownService(t *testing.T) {
 	handler := New(Options{
-		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Statuses: staticStatuses{},
+		Logger:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Statuses:            staticStatuses{},
+		DisableAuthForTests: true,
 	})
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/services/missing", nil)
 	response := httptest.NewRecorder()
