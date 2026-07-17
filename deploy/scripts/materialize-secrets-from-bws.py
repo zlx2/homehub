@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Materialize HomeHub secrets from Bitwarden with per-container ownership."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+BWS = "/usr/local/bin/bws"
+TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/etc/homehub/bws-access-token"))
+PROJECT_NAME = os.environ.get("HOMEHUB_BWS_PROJECT", "HomeHub Production")
+SECRETS_DIR = Path(os.environ.get("HOMEHUB_SECRETS_DIR", "/srv/homehub/runtime/secrets"))
+
+TARGETS = {
+    "postgres_superuser_password": [("postgres_superuser_password", 70, 70)],
+    "control_db_password": [
+        ("control_db_password_control", 65532, 65532),
+        ("control_db_password_postgres", 70, 70),
+    ],
+    "auth_encryption_key": [("auth_encryption_key", 65532, 65532)],
+    "owner_setup_token": [("owner_setup_token", 65532, 65532)],
+    "beszel_agent_key": [("beszel_agent_key", 65532, 65532)],
+    "drop_identity_key": [
+        ("drop_identity_key_control", 65532, 65532),
+        ("drop_identity_key_drop", 10001, 10001),
+    ],
+}
+
+
+def fail(message: str) -> None:
+    print(f"BWS materialization failed: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def bws_json(arguments: list[str], environment: dict[str, str]) -> list[dict[str, object]]:
+    result = subprocess.run(
+        [BWS, *arguments, "--output", "json"],
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        fail("Bitwarden read failed")
+    try:
+        value = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        fail("Bitwarden returned invalid JSON")
+    if not isinstance(value, list):
+        fail("Bitwarden returned an unexpected response")
+    return value
+
+
+def atomic_write(path: Path, value: str, uid: int, gid: int) -> None:
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as output:
+            output.write(value)
+            output.flush()
+            os.fsync(output.fileno())
+            os.fchmod(output.fileno(), 0o400)
+            os.fchown(output.fileno(), uid, gid)
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def main() -> None:
+    if os.geteuid() != 0:
+        fail("run this script as root")
+    try:
+        token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        fail("access token file is unavailable")
+    if not token:
+        fail("access token file is empty")
+    environment = os.environ.copy()
+    environment["BWS_ACCESS_TOKEN"] = token
+
+    projects = bws_json(["project", "list"], environment)
+    matches = [project for project in projects if project.get("name") == PROJECT_NAME]
+    if len(matches) != 1 or not isinstance(matches[0].get("id"), str):
+        fail("the configured project was not found uniquely")
+    secrets = bws_json(["secret", "list", str(matches[0]["id"])], environment)
+
+    values: dict[str, str] = {}
+    for secret in secrets:
+        key = secret.get("key")
+        if isinstance(key, str) and key in TARGETS:
+            if key in values:
+                fail(f"duplicate Bitwarden secret key: {key}")
+            value = secret.get("value")
+            if not isinstance(value, str) or not value:
+                fail(f"Bitwarden secret {key} is empty")
+            values[key] = value
+    missing = sorted(set(TARGETS) - set(values))
+    if missing:
+        fail("required secret keys are missing")
+
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(SECRETS_DIR, 0o700)
+    written = 0
+    for key, targets in TARGETS.items():
+        for filename, uid, gid in targets:
+            atomic_write(SECRETS_DIR / filename, values[key], uid, gid)
+            written += 1
+    print(f"BWS materialization verified: secrets={len(values)} files={written}")
+
+
+if __name__ == "__main__":
+    main()

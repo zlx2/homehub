@@ -33,6 +33,25 @@ sudo ./deploy/scripts/bootstrap-beszel.sh
 This gives the PostgreSQL data directory to the UID used by the official image
 without making the platform data tree world-writable.
 
+## Bitwarden Secrets Manager
+
+Production values are sourced from the `HomeHub Production` Secrets Manager
+project. A project-scoped, read-only machine-account token is stored outside
+the repository at `/etc/homehub/bws-access-token` with owner `root:root` and
+mode `0400`.
+
+Install the pinned CLI and materialize per-container files with:
+
+```sh
+make install-bws
+make secrets-sync
+```
+
+The sync validates all required keys before atomically replacing any runtime
+file. It creates separate copies where Control, PostgreSQL, and Drop require
+different Unix ownership. Do not place the BWS access token in `.env`, shell
+history, Compose configuration, or Git.
+
 The Beszel bootstrap creates its first local user and SSH identity without
 persisting the generated bootstrap password. Normal access is then delegated to
 HomeHub Control by the trusted `X-HomeHub-Email` header. The agent listens on a

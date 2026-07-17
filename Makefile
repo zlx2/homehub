@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-demo-decider test-demo-counter test-drop format-control format-demo-decider format-drop edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check demos-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-demo-decider test-demo-counter test-drop format-control format-demo-decider format-drop install-bws bws-migrate secrets-sync edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check demos-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -32,6 +32,15 @@ test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
 
 format-drop: ## Format Drop Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/drop:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
+
+install-bws: ## Install the pinned Bitwarden Secrets Manager CLI
+	@sudo ./deploy/scripts/install-bws.sh
+
+bws-migrate: ## Upsert existing HomeHub runtime secrets into Bitwarden
+	@sudo ./deploy/scripts/migrate-secrets-to-bws.py
+
+secrets-sync: ## Materialize HomeHub runtime secret files from Bitwarden
+	@sudo ./deploy/scripts/materialize-secrets-from-bws.py
 
 format-control: ## Format HomeHub Control Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
