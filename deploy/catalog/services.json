@@ -31,6 +31,16 @@
       "health_url": "http://beszel:8090/api/health"
     },
     {
+	  "id": "drop",
+	  "name": "Drop",
+	  "description": "临时发送文字与文件；本人可管理，分享访客可直接使用。",
+	  "icon": "↓",
+	  "route": "/drop/",
+	  "visibility": "shared",
+	  "share_enabled": true,
+	  "health_url": "http://drop:8080/health/ready"
+	},
+	{
       "id": "demo-decider",
       "name": "随机决策器",
       "description": "Go 编写的无状态随机选择器，用于验证网关鉴权、路由和服务分享。",

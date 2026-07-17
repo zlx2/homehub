@@ -1,0 +1,18 @@
+{{define "auth.html"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f6fa">
+  <meta name="color-scheme" content="light">
+  <title>进入 Drop</title>
+  <link rel="icon" href="/favicon.ico?v={{.AssetVersion}}" sizes="any">
+  <link rel="stylesheet" href="/assets/app.css?v={{.AssetVersion}}">
+</head>
+<body>
+  <div id="app" data-page="{{.Page}}" data-role="{{.Role}}"></div>
+  <script type="module" src="/assets/app.js?v={{.AssetVersion}}"></script>
+</body>
+</html>
+{{end}}

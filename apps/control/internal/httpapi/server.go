@@ -23,6 +23,10 @@ type StatusProvider interface {
 	Snapshot() map[string]health.Result
 }
 
+type IdentityIssuer interface {
+	Issue(subject, name string, scopes []string, audience string) (string, error)
+}
+
 type Options struct {
 	Logger              *slog.Logger
 	Services            []catalog.Service
@@ -34,6 +38,7 @@ type Options struct {
 	AllowedOrigins      []string
 	SecureCookies       bool
 	DisableAuthForTests bool
+	IdentityIssuer      IdentityIssuer
 }
 
 type server struct {
@@ -47,6 +52,7 @@ type server struct {
 	allowedOrigins      map[string]struct{}
 	secureCookies       bool
 	disableAuthForTests bool
+	identityIssuer      IdentityIssuer
 }
 
 type principalContextKey struct{}
@@ -63,6 +69,7 @@ func New(options Options) http.Handler {
 		allowedOrigins:      make(map[string]struct{}, len(options.AllowedOrigins)),
 		secureCookies:       options.SecureCookies,
 		disableAuthForTests: options.DisableAuthForTests,
+		identityIssuer:      options.IdentityIssuer,
 	}
 	for _, origin := range options.AllowedOrigins {
 		api.allowedOrigins[origin] = struct{}{}
@@ -158,6 +165,20 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writer.Header().Set("X-HomeHub-Beszel-Email", "owner@homehub.local")
 	}
 	writer.Header().Set("X-HomeHub-Scopes", strings.Join(principal.Scopes, " "))
+	if service.ID == "drop" {
+		if api.identityIssuer == nil {
+			api.logger.Error("drop identity issuer is not configured")
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+			return
+		}
+		identity, err := api.identityIssuer.Issue(principal.ID, principal.DisplayName, principal.Scopes, service.ID)
+		if err != nil {
+			api.logger.Error("issue service identity", "service_id", service.ID, "error", err)
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+			return
+		}
+		writer.Header().Set("X-HomeHub-Identity", identity)
+	}
 	writer.WriteHeader(http.StatusNoContent)
 }
 

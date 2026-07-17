@@ -29,6 +29,7 @@ http:
           - X-HomeHub-Email
           - X-HomeHub-Beszel-Email
           - X-HomeHub-Scopes
+          - X-HomeHub-Identity
 
     homehub-strip-server:
       stripPrefix:
@@ -44,6 +45,11 @@ http:
       stripPrefix:
         prefixes:
           - /demo/counter
+
+    homehub-strip-drop:
+      stripPrefix:
+        prefixes:
+          - /drop
 
     homehub-beszel-security-headers:
       headers:

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-demo-decider test-demo-counter format-control format-demo-decider edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check demos-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-demo-decider test-demo-counter test-drop format-control format-demo-decider format-drop edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check demos-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -26,6 +26,12 @@ test-demo-counter: ## Run the Rust demo service unit tests
 		--build-arg HTTPS_PROXY=http://127.0.0.1:1081 \
 		--build-arg http_proxy=http://127.0.0.1:1081 \
 		--build-arg https_proxy=http://127.0.0.1:1081 .
+
+test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
+	@docker build --network host -f services/drop/Dockerfile -t homehub/drop:test .
+
+format-drop: ## Format Drop Go source
+	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/drop:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
 
 format-control: ## Format HomeHub Control Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal

@@ -19,6 +19,7 @@ type Config struct {
 	DatabasePasswordFile string
 	AuthKeyFile          string
 	BootstrapTokenFile   string
+	DropIdentityKeyFile  string
 	AllowedOrigins       []string
 	SecureCookies        bool
 	HealthInterval       time.Duration
@@ -39,6 +40,7 @@ func Load() (Config, error) {
 		DatabasePasswordFile: envOrDefault("HOMEHUB_DATABASE_PASSWORD_FILE", "/run/secrets/control_db_password"),
 		AuthKeyFile:          envOrDefault("HOMEHUB_AUTH_KEY_FILE", "/run/secrets/auth_encryption_key"),
 		BootstrapTokenFile:   envOrDefault("HOMEHUB_BOOTSTRAP_TOKEN_FILE", "/run/secrets/owner_setup_token"),
+		DropIdentityKeyFile:  envOrDefault("HOMEHUB_DROP_IDENTITY_KEY_FILE", "/run/secrets/drop_identity_key"),
 		AllowedOrigins:       splitCSV(envOrDefault("HOMEHUB_ALLOWED_ORIGINS", "http://127.0.0.1:18080")),
 		SecureCookies:        strings.EqualFold(envOrDefault("HOMEHUB_SECURE_COOKIES", "false"), "true"),
 		HealthInterval:       10 * time.Second,

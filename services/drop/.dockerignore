@@ -1,0 +1,10 @@
+.git
+.cache
+node_modules
+data
+drop
+*.swp
+.env
+*.db
+*.db-shm
+*.db-wal

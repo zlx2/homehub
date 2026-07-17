@@ -1,0 +1,19 @@
+# Binary
+/drop
+
+# Data and local build caches
+/data
+/.cache
+/node_modules
+
+# Local configuration
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

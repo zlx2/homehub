@@ -17,6 +17,7 @@ import (
 	"homehub.local/control/internal/config"
 	"homehub.local/control/internal/health"
 	"homehub.local/control/internal/httpapi"
+	"homehub.local/control/internal/identitytoken"
 )
 
 var (
@@ -73,6 +74,10 @@ func serve() error {
 		return fmt.Errorf("initialize authentication: %w", err)
 	}
 	defer authService.Close()
+	identitySigner, err := identitytoken.NewFromFile(cfg.DropIdentityKeyFile)
+	if err != nil {
+		return fmt.Errorf("initialize service identity signer: %w", err)
+	}
 
 	monitor := health.NewMonitor(services, cfg.HealthInterval, cfg.HealthTimeout)
 	handler := httpapi.New(httpapi.Options{
@@ -85,6 +90,7 @@ func serve() error {
 		Auth:           authService,
 		AllowedOrigins: cfg.AllowedOrigins,
 		SecureCookies:  cfg.SecureCookies,
+		IdentityIssuer: identitySigner,
 	})
 
 	server := &http.Server{
