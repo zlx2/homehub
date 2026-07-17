@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -75,6 +76,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", api.logout)
 	mux.HandleFunc("POST /api/v1/setup/begin", api.beginSetup)
 	mux.HandleFunc("POST /api/v1/setup/confirm", api.confirmSetup)
+	mux.HandleFunc("POST /api/v1/invitations/begin", api.beginInvitationEnrollment)
+	mux.HandleFunc("POST /api/v1/invitations/confirm", api.confirmInvitationEnrollment)
 	mux.Handle("GET /api/v1/system", api.requireAuth(http.HandlerFunc(api.system)))
 	mux.Handle("GET /api/v1/services", api.requireAuth(http.HandlerFunc(api.listServices)))
 	mux.Handle("GET /api/v1/services/{id}", api.requireAuth(http.HandlerFunc(api.getService)))
@@ -82,6 +85,9 @@ func New(options Options) http.Handler {
 	mux.Handle("GET /api/v1/admin/service-grants", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listServiceGrants))))
 	mux.Handle("POST /api/v1/admin/service-grants", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.createServiceGrant))))
 	mux.Handle("DELETE /api/v1/admin/service-grants/{id}", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.deleteServiceGrant))))
+	mux.Handle("GET /api/v1/admin/invitations", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listInvitations))))
+	mux.Handle("POST /api/v1/admin/invitations", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.createInvitation))))
+	mux.Handle("DELETE /api/v1/admin/invitations/{id}", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.deleteInvitation))))
 	return api.recover(api.requestID(api.securityHeaders(api.logRequests(mux))))
 }
 
@@ -235,6 +241,70 @@ func (api *server) confirmSetup(writer http.ResponseWriter, request *http.Reques
 		}
 		api.logger.Error("confirm owner setup", "error", err)
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	api.setSessionCookies(writer, session)
+	writeJSON(writer, http.StatusCreated, map[string]any{"authenticated": true, "principal": session.Principal})
+}
+
+func (api *server) beginInvitationEnrollment(writer http.ResponseWriter, request *http.Request) {
+	if !api.validOrigin(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+		return
+	}
+	var input struct {
+		Token    string `json:"token"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	setup, err := api.auth.BeginInvitationEnrollment(request.Context(), input.Token, input.Username, input.Password, remoteIP(request))
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidInvitation):
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_invitation"})
+		case errors.Is(err, auth.ErrInvitationClaimed):
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "invitation_already_claimed"})
+		case errors.Is(err, auth.ErrUsernameUnavailable):
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "username_unavailable"})
+		case strings.Contains(err.Error(), "must"):
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_input", "message": err.Error()})
+		default:
+			api.logger.Error("begin invitation enrollment", "error", err)
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		}
+		return
+	}
+	writeJSON(writer, http.StatusCreated, setup)
+}
+
+func (api *server) confirmInvitationEnrollment(writer http.ResponseWriter, request *http.Request) {
+	if !api.validOrigin(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+		return
+	}
+	var input struct {
+		SetupID  string `json:"setup_id"`
+		TOTPCode string `json:"totp_code"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	session, err := api.auth.ConfirmInvitationEnrollment(request.Context(), input.SetupID, input.TOTPCode, remoteIP(request), request.UserAgent())
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrInvalidTOTP):
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_totp"})
+		case errors.Is(err, auth.ErrInvalidInvitation):
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "invitation_unavailable"})
+		case errors.Is(err, auth.ErrUsernameUnavailable):
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "username_unavailable"})
+		default:
+			api.logger.Error("confirm invitation enrollment", "error", err)
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		}
 		return
 	}
 	api.setSessionCookies(writer, session)
@@ -524,6 +594,99 @@ func (api *server) deleteServiceGrant(writer http.ResponseWriter, request *http.
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) listInvitations(writer http.ResponseWriter, request *http.Request) {
+	invitations, err := api.auth.ListInvitations(request.Context())
+	if err != nil {
+		api.logger.Error("list invitations", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"invitations": invitations})
+}
+
+func (api *server) createInvitation(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	var input struct {
+		ServiceIDs []string   `json:"service_ids"`
+		ExpiresAt  *time.Time `json:"expires_at"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	serviceIDs, err := api.validateInvitationServices(input.ServiceIDs)
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_service_selection", "message": err.Error()})
+		return
+	}
+	expiresAt, err := normalizeInvitationExpiry(time.Now().UTC(), input.ExpiresAt)
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_expiry", "message": err.Error()})
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	invitation, err := api.auth.CreateInvitation(request.Context(), actor.ID, serviceIDs, expiresAt, remoteIP(request))
+	if err != nil {
+		api.logger.Error("create invitation", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusCreated, invitation)
+}
+
+func (api *server) deleteInvitation(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	revoked, err := api.auth.RevokeInvitation(request.Context(), actor.ID, request.PathValue("id"), remoteIP(request))
+	if err != nil {
+		api.logger.Error("revoke invitation", "error", err)
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_invitation_id"})
+		return
+	}
+	if !revoked {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "invitation_not_found"})
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) validateInvitationServices(input []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(input))
+	serviceIDs := make([]string, 0, len(input))
+	for _, serviceID := range input {
+		if _, duplicate := seen[serviceID]; duplicate {
+			return nil, fmt.Errorf("service %q was selected more than once", serviceID)
+		}
+		service, exists := api.findService(serviceID)
+		if !exists || service.Visibility != "shared" || !service.ShareEnabled {
+			return nil, fmt.Errorf("service %q is not shareable", serviceID)
+		}
+		seen[serviceID] = struct{}{}
+		serviceIDs = append(serviceIDs, serviceID)
+	}
+	sort.Strings(serviceIDs)
+	return serviceIDs, nil
+}
+
+func normalizeInvitationExpiry(now time.Time, requested *time.Time) (time.Time, error) {
+	expiresAt := now.Add(24 * time.Hour)
+	if requested != nil {
+		expiresAt = requested.UTC()
+	}
+	if expiresAt.Before(now.Add(5 * time.Minute)) {
+		return time.Time{}, fmt.Errorf("invitation must remain valid for at least 5 minutes")
+	}
+	if expiresAt.After(now.Add(7 * 24 * time.Hour)) {
+		return time.Time{}, fmt.Errorf("invitation cannot remain valid for more than 7 days")
+	}
+	return expiresAt, nil
 }
 
 func (api *server) findService(id string) (catalog.Service, bool) {

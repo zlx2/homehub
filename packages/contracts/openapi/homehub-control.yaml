@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HomeHub Control API
-  version: 0.3.0
+  version: 0.4.0
   description: Authentication, service authorization, and service-directory contract for HomeHub.
 servers:
   - url: https://111.229.205.99
@@ -76,6 +76,32 @@ paths:
       responses:
         "201": { description: Owner activated and session created. }
         "401": { description: TOTP code was invalid. }
+  /api/v1/invitations/begin:
+    post:
+      operationId: beginInvitationEnrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeginInvitationEnrollmentRequest"
+      responses:
+        "201": { description: Pending friend enrollment with TOTP provisioning data. }
+        "401": { description: Invitation is invalid or expired. }
+        "409": { description: Invitation is already claimed or username is unavailable. }
+  /api/v1/invitations/confirm:
+    post:
+      operationId: confirmInvitationEnrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmSetupRequest"
+      responses:
+        "201": { description: Friend account and session created. }
+        "401": { description: TOTP code was invalid. }
+        "409": { description: Invitation or username is no longer available. }
   /api/v1/system:
     get:
       operationId: getSystem
@@ -146,6 +172,42 @@ paths:
         "204": { description: Service grant revoked. }
         "403": { description: Administrator, Origin, or CSRF validation failed. }
         "404": { description: Active grant was not found. }
+  /api/v1/admin/invitations:
+    get:
+      operationId: listInvitations
+      security: [{ ownerSession: [] }]
+      responses:
+        "200": { description: Invitations without their one-time plaintext tokens. }
+        "403": { description: Administrator scope is required. }
+    post:
+      operationId: createInvitation
+      security: [{ ownerSession: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201": { description: Invitation created; plaintext token is returned once. }
+        "400": { description: Expiry or service selection is invalid. }
+        "403": { description: Administrator, Origin, or CSRF validation failed. }
+  /api/v1/admin/invitations/{id}:
+    delete:
+      operationId: revokeInvitation
+      security: [{ ownerSession: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Invitation revoked. }
+        "403": { description: Administrator, Origin, or CSRF validation failed. }
+        "404": { description: Active invitation was not found. }
 components:
   securitySchemes:
     ownerSession:
@@ -189,6 +251,26 @@ components:
       properties:
         principal_id: { type: string, format: uuid }
         service_id: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$" }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+    BeginInvitationEnrollmentRequest:
+      type: object
+      additionalProperties: false
+      required: [token, username, password]
+      properties:
+        token: { type: string, minLength: 32 }
+        username: { type: string, pattern: "^[a-zA-Z0-9_.-]{3,64}$" }
+        password: { type: string, minLength: 12, maxLength: 256 }
+    CreateInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [service_ids]
+      properties:
+        service_ids:
+          type: array
+          uniqueItems: true
+          items: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$" }
         expires_at:
           type: [string, "null"]
           format: date-time

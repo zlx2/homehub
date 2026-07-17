@@ -67,6 +67,39 @@ func TestRequireAdminDeniesNonAdminPrincipal(t *testing.T) {
 	}
 }
 
+func TestNormalizeInvitationExpiry(t *testing.T) {
+	now := time.Date(2026, 7, 17, 6, 0, 0, 0, time.UTC)
+	defaultExpiry, err := normalizeInvitationExpiry(now, nil)
+	if err != nil || !defaultExpiry.Equal(now.Add(24*time.Hour)) {
+		t.Fatalf("default expiry = %v, error = %v", defaultExpiry, err)
+	}
+	tooSoon := now.Add(4 * time.Minute)
+	if _, err := normalizeInvitationExpiry(now, &tooSoon); err == nil {
+		t.Fatal("expected short invitation expiry to fail")
+	}
+	tooLong := now.Add(8 * 24 * time.Hour)
+	if _, err := normalizeInvitationExpiry(now, &tooLong); err == nil {
+		t.Fatal("expected long invitation expiry to fail")
+	}
+}
+
+func TestInvitationOnlyIncludesShareableServices(t *testing.T) {
+	api := &server{services: []catalog.Service{
+		{ID: "chat", Visibility: "shared", ShareEnabled: true},
+		{ID: "server", Visibility: "owner", ShareEnabled: false},
+	}}
+	services, err := api.validateInvitationServices([]string{"chat"})
+	if err != nil || len(services) != 1 || services[0] != "chat" {
+		t.Fatalf("services = %#v, error = %v", services, err)
+	}
+	if _, err := api.validateInvitationServices([]string{"server"}); err == nil {
+		t.Fatal("expected owner-only service selection to fail")
+	}
+	if _, err := api.validateInvitationServices([]string{"chat", "chat"}); err == nil {
+		t.Fatal("expected duplicate service selection to fail")
+	}
+}
+
 func TestServicesDoNotExposeInternalHealthURL(t *testing.T) {
 	handler := New(Options{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
