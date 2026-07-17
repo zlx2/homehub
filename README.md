@@ -21,7 +21,8 @@ short-lived IP certificate. Owner authentication uses an Argon2id password,
 TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
 protection. Anonymous requests cannot read the service directory APIs.
 The monitoring panel is mounted at `/server/`, reuses the HomeHub session through
-ForwardAuth, and is restricted to the `admin` scope. Its local agent has no TCP
+ForwardAuth, maps an authenticated HomeHub administrator to its internal owner
+account, and is restricted to the `admin` scope. Its local agent has no TCP
 listener and reaches Docker only through a loopback-bound read-only socket proxy.
 
 ## Development verification

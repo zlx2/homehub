@@ -229,7 +229,7 @@ services:
     user: "65532:65532"
     environment:
       APP_URL: https://111.229.205.99/server
-      TRUSTED_AUTH_HEADER: X-HomeHub-Email
+      TRUSTED_AUTH_HEADER: X-HomeHub-Beszel-Email
       DISABLE_PASSWORD_AUTH: "true"
       CONTAINER_DETAILS: "false"
       CHECK_UPDATES: "false"

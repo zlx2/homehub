@@ -27,6 +27,7 @@ http:
           - X-HomeHub-Principal-ID
           - X-HomeHub-Principal
           - X-HomeHub-Email
+          - X-HomeHub-Beszel-Email
           - X-HomeHub-Scopes
 
     homehub-strip-server:

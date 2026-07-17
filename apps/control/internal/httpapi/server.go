@@ -134,13 +134,15 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 	writer.Header().Set("X-HomeHub-Principal-ID", principal.ID)
 	writer.Header().Set("X-HomeHub-Principal", principal.Username)
 	writer.Header().Set("X-HomeHub-Email", principal.Username+"@homehub.local")
+	if isServerPanelURI(request.Header.Get("X-Forwarded-Uri")) {
+		writer.Header().Set("X-HomeHub-Beszel-Email", "owner@homehub.local")
+	}
 	writer.Header().Set("X-HomeHub-Scopes", strings.Join(principal.Scopes, " "))
 	writer.WriteHeader(http.StatusNoContent)
 }
 
 func forwardAuthAllowed(principal auth.Principal, forwardedURI string) bool {
-	path := strings.TrimSpace(strings.SplitN(forwardedURI, "?", 2)[0])
-	if path != "/server" && !strings.HasPrefix(path, "/server/") {
+	if !isServerPanelURI(forwardedURI) {
 		return true
 	}
 	for _, scope := range principal.Scopes {
@@ -149,6 +151,11 @@ func forwardAuthAllowed(principal auth.Principal, forwardedURI string) bool {
 		}
 	}
 	return false
+}
+
+func isServerPanelURI(forwardedURI string) bool {
+	path := strings.TrimSpace(strings.SplitN(forwardedURI, "?", 2)[0])
+	return path == "/server" || strings.HasPrefix(path, "/server/")
 }
 
 func (api *server) beginSetup(writer http.ResponseWriter, request *http.Request) {
