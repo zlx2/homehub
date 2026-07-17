@@ -1,6 +1,7 @@
 package identitytoken
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -35,6 +36,64 @@ func TestRunningServiceAcceptsControlIdentity(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("service returned status %d", response.StatusCode)
+	}
+}
+
+func TestRunningAIGatewayCompletes(t *testing.T) {
+	target := os.Getenv("HOMEHUB_AI_COMPLETION_SMOKE_URL")
+	model := os.Getenv("HOMEHUB_AI_COMPLETION_SMOKE_MODEL")
+	keyFile := os.Getenv("HOMEHUB_IDENTITY_SMOKE_KEY_FILE")
+	if target == "" || model == "" || keyFile == "" {
+		t.Skip("running AI completion smoke test is not configured")
+	}
+	signer, err := NewFromFile(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := signer.IssueAI(
+		"ai-completion-smoke", "AI Completion Smoke Test", "smoke-service",
+		[]string{"portal.view"}, []string{model},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"model": model,
+		"messages": []map[string]string{{"role": "user", "content": "Reply with OK."}},
+		"max_tokens": 16,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-HomeHub-Identity", token)
+	client := &http.Client{Timeout: 2 * time.Minute}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		var gatewayError struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		_ = json.NewDecoder(response.Body).Decode(&gatewayError)
+		t.Fatalf("AI Gateway model %q returned status %d code %q", model, response.StatusCode, gatewayError.Error.Code)
+	}
+	var completion struct {
+		Choices []json.RawMessage `json:"choices"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&completion); err != nil {
+		t.Fatal(err)
+	}
+	if len(completion.Choices) == 0 {
+		t.Fatal("AI provider returned no choices")
 	}
 }
 
