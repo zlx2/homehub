@@ -113,7 +113,16 @@
 
   function updateViewport() {
     mobileMode = matchMedia('(max-width: 720px), (pointer: coarse)').matches;
-    const height = Math.round(window.visualViewport?.height || window.innerHeight);
+    const viewport = window.visualViewport;
+    const height = Math.round(viewport?.height || window.innerHeight);
+    const offsetTop = Math.round(viewport?.offsetTop || 0);
+    const keyboardOpen = window.innerHeight - height > 120;
+
+    document.documentElement.style.setProperty('--app-offset-top', `${offsetTop}px`);
+    document.documentElement.style.setProperty(
+      '--bottom-safe-area',
+      keyboardOpen ? '0px' : 'env(safe-area-inset-bottom)'
+    );
     if (height === lastViewportHeight) return;
     lastViewportHeight = height;
     document.documentElement.style.setProperty('--app-height', `${height}px`);
@@ -133,12 +142,14 @@
 
     window.addEventListener('resize', updateViewport);
     window.visualViewport?.addEventListener('resize', updateViewport);
+    window.visualViewport?.addEventListener('scroll', updateViewport);
 
     return () => {
       if (noticeTimer) clearTimeout(noticeTimer);
       if (viewportTimer) clearTimeout(viewportTimer);
       window.removeEventListener('resize', updateViewport);
       window.visualViewport?.removeEventListener('resize', updateViewport);
+      window.visualViewport?.removeEventListener('scroll', updateViewport);
       client?.dispose();
     };
   });
@@ -189,6 +200,7 @@
       maxlength="12000"
       placeholder="输入消息或命令…"
       rows="1"
+      onfocus={updateViewport}
       onkeydown={handleComposerKeydown}
     ></textarea>
     <button type="submit" disabled={!draft.trim() || connection !== 'connected'}>发送</button>

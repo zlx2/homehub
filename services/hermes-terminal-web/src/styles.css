@@ -4,6 +4,8 @@
   background: #111522;
   font-synthesis: none;
   --app-height: 100dvh;
+  --app-offset-top: 0px;
+  --bottom-safe-area: env(safe-area-inset-bottom);
 }
 
 * {
@@ -13,6 +15,8 @@
 html,
 body,
 #app {
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
   margin: 0;
@@ -33,12 +37,17 @@ button {
 }
 
 .terminal-app {
-  position: relative;
+  position: fixed;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: var(--app-height);
   min-height: 240px;
+  transform: translate3d(0, var(--app-offset-top), 0);
   background:
     radial-gradient(circle at 50% -20%, rgba(82, 91, 132, 0.2), transparent 42rem),
     #111522;
@@ -238,7 +247,7 @@ button {
   gap: 7px;
   width: 100%;
   overflow-x: auto;
-  padding: 7px max(10px, env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  padding: 7px max(10px, env(safe-area-inset-right)) calc(7px + var(--bottom-safe-area)) max(10px, env(safe-area-inset-left));
   border-top: 1px solid rgba(217, 220, 227, 0.08);
   background: rgba(18, 22, 35, 0.96);
   scrollbar-width: none;
@@ -387,7 +396,7 @@ button {
   }
 
   .toast {
-    bottom: calc(116px + env(safe-area-inset-bottom));
+    bottom: calc(116px + var(--bottom-safe-area));
   }
 }
 
@@ -398,7 +407,7 @@ button {
 
   .keybar {
     padding-top: 4px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom));
+    padding-bottom: calc(4px + var(--bottom-safe-area));
   }
 
   .keybar button {
