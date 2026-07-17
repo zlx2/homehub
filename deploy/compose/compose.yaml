@@ -1,0 +1,127 @@
+name: hermes-platform
+
+services:
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      INFO: "1"
+      NETWORKS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      CONFIGS: "0"
+      DISTRIBUTION: "0"
+      EXEC: "0"
+      IMAGES: "0"
+      NODES: "0"
+      PLUGINS: "0"
+      SECRETS: "0"
+      SERVICES: "0"
+      SESSION: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      TASKS: "0"
+      VOLUMES: "0"
+    networks:
+      - docker-api
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+      - /var/lib/haproxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: docker-socket-proxy,localhost,127.0.0.1
+      no_proxy: docker-socket-proxy,localhost,127.0.0.1
+    depends_on:
+      - docker-socket-proxy
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
+    networks:
+      - edge
+      - docker-api
+    volumes:
+      - ../traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ../traefik/dynamic:/etc/traefik/dynamic:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  postgres:
+    image: postgres:18.4-alpine
+    profiles:
+      - data
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
+      TZ: ${TZ:-Asia/Hong_Kong}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=50
+      - -c
+      - password_encryption=scram-sha-256
+    networks:
+      - data
+    volumes:
+      - ${HERMES_DATA_ROOT:-/srv/hermes-platform}/postgres:/var/lib/postgresql
+    secrets:
+      - postgres_superuser_password
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  edge:
+    name: hermes-edge
+  backend:
+    name: hermes-backend
+    internal: true
+  data:
+    name: hermes-data
+    internal: true
+  docker-api:
+    name: hermes-docker-api
+    internal: true
+
+secrets:
+  postgres_superuser_password:
+    file: ${HERMES_SECRETS_DIR:-/srv/hermes-platform/runtime/secrets}/postgres_superuser_password

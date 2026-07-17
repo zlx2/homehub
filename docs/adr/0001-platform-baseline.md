@@ -24,6 +24,8 @@ routing, AI provider integration, or operational conventions.
 - Use Bitwarden Secrets Manager for production secrets.
 - Begin with synchronous REST APIs. Introduce a transactional outbox before a
   message broker is justified.
+- During development, bind Traefik only to loopback ports 18080 and 18081 until
+  the existing port 443 listener has a reviewed cutover and rollback plan.
 
 ## Consequences
 

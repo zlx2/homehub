@@ -1,0 +1,35 @@
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  level: INFO
+  format: json
+
+accessLog:
+  format: json
+
+api:
+  dashboard: true
+  insecure: false
+
+ping:
+  entryPoint: admin
+
+entryPoints:
+  web:
+    address: ":8080"
+    forwardedHeaders:
+      insecure: false
+  admin:
+    address: ":8081"
+
+providers:
+  docker:
+    endpoint: tcp://docker-socket-proxy:2375
+    exposedByDefault: false
+    network: hermes-edge
+    watch: true
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true

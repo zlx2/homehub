@@ -1,0 +1,14 @@
+http:
+  middlewares:
+    hermes-security-headers:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: >-
+          camera=(), microphone=(), geolocation=(), payment=(), usb=()
+        customResponseHeaders:
+          Server: ""
+
+    hermes-compress:
+      compress: {}

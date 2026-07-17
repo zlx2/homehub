@@ -45,3 +45,8 @@
 `curl`, `jq`, `openssl`, and `make` are available. The Bitwarden Secrets Manager
 CLI was not found during the initial non-invasive check and will be installed or
 integrated before production secrets are needed.
+
+The Docker daemon injects an HTTP proxy pointing at `127.0.0.1:1081` into new
+containers. Platform containers that call other containers must set `NO_PROXY`
+for their internal service names because a container's loopback address is not
+the host loopback address.
