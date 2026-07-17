@@ -1,0 +1,40 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+
+# Runtime and persistent data
+data/
+runtime/
+backups/
+*.db
+*.db-shm
+*.db-wal
+
+# Go
+bin/
+coverage.out
+
+# Rust
+target/
+
+# JavaScript
+node_modules/
+dist/
+.svelte-kit/
+coverage/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.swp
+*.log
