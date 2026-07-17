@@ -1,10 +1,12 @@
 package identitytoken
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,9 +60,10 @@ func TestRunningAIGatewayCompletes(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload, err := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{{"role": "user", "content": "Reply with OK."}},
+		"model":      model,
+		"messages":   []map[string]string{{"role": "user", "content": "Reply with OK."}},
 		"max_tokens": 16,
+		"stream":     os.Getenv("HOMEHUB_AI_COMPLETION_SMOKE_STREAM") == "true",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +88,23 @@ func TestRunningAIGatewayCompletes(t *testing.T) {
 		}
 		_ = json.NewDecoder(response.Body).Decode(&gatewayError)
 		t.Fatalf("AI Gateway model %q returned status %d code %q", model, response.StatusCode, gatewayError.Error.Code)
+	}
+	if os.Getenv("HOMEHUB_AI_COMPLETION_SMOKE_STREAM") == "true" {
+		scanner := bufio.NewScanner(response.Body)
+		seenData := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") && line != "data: [DONE]" {
+				seenData = true
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if !seenData {
+			t.Fatal("AI provider returned no SSE data")
+		}
+		return
 	}
 	var completion struct {
 		Choices []json.RawMessage `json:"choices"`
