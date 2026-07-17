@@ -55,7 +55,9 @@
   }
 
   function sendDraft() {
-    const value = draft;
+    // Read from the native control at tap time. During IME composition the DOM
+    // value can be newer than the framework binding by one render turn.
+    const value = composerElement?.value ?? draft;
     if (!value.trim()) return;
     if (connection !== 'connected') return showNotice('终端尚未连接');
 
@@ -73,6 +75,13 @@
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     sendDraft();
+  }
+
+  function keepComposerFocused(event: PointerEvent) {
+    // Prevent the button from taking focus on touch. Otherwise the textarea
+    // blurs, the mobile layout changes before `click`, and Safari can cancel
+    // the first tap because the button moved under the pointer.
+    event.preventDefault();
   }
 
   function focusInput() {
@@ -227,7 +236,12 @@
       onfocus={handleComposerFocus}
       onkeydown={handleComposerKeydown}
     ></textarea>
-    <button type="submit" disabled={!draft.trim() || connection !== 'connected'}>发送</button>
+    <button
+      type="button"
+      disabled={connection !== 'connected'}
+      onpointerdown={keepComposerFocused}
+      onclick={sendDraft}
+    >发送</button>
   </form>
 
   <nav class="keybar" aria-label="终端快捷键">

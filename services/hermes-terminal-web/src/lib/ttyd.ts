@@ -56,6 +56,9 @@ export class TtydClient {
   private reconnectTimer?: number;
   private resizeTimer?: number;
   private pendingResize?: { columns: number; rows: number };
+  private outputFrame?: number;
+  private outputBytes = 0;
+  private outputChunks: Uint8Array[] = [];
   private stopped = false;
   private fitFrame?: number;
   private written = 0;
@@ -148,6 +151,7 @@ export class TtydClient {
     this.stopped = true;
     this.clearReconnect();
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    if (this.outputFrame) cancelAnimationFrame(this.outputFrame);
     if (this.fitFrame) cancelAnimationFrame(this.fitFrame);
     this.resizeObserver?.disconnect();
     this.socket?.close(1000);
@@ -192,8 +196,34 @@ export class TtydClient {
     const body = bytes.subarray(1);
 
     if (command === OUTPUT) {
-      this.write(body);
+      this.queueOutput(body);
     }
+  }
+
+  private queueOutput(data: Uint8Array) {
+    this.outputChunks.push(data);
+    this.outputBytes += data.length;
+    if (this.outputFrame) return;
+
+    // Ink may emit clear-screen and redraw sequences in separate WebSocket
+    // messages. Flush them together just before paint so xterm never renders
+    // the temporary blank state between those messages.
+    this.outputFrame = requestAnimationFrame(() => this.flushOutput());
+  }
+
+  private flushOutput() {
+    this.outputFrame = undefined;
+    if (!this.outputBytes) return;
+
+    const output = new Uint8Array(this.outputBytes);
+    let offset = 0;
+    for (const chunk of this.outputChunks) {
+      output.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.outputChunks = [];
+    this.outputBytes = 0;
+    this.write(output);
   }
 
   private write(data: Uint8Array) {
