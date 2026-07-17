@@ -16,9 +16,8 @@ grants, and an AI gateway for independently deployable services.
 - Bitwarden Secrets Manager for production secrets
 
 The current stack includes PostgreSQL, HomeHub Control, the Svelte portal,
-Traefik, a Beszel server-monitoring module, and two shareable reference services.
-The Go random decider demonstrates a stateless service; the Rust shared counter
-owns a private SQLite database and demonstrates isolated durable state. The owner portal is available at `https://111.229.205.99` with a trusted
+Traefik, a Beszel server-monitoring module, and Drop as the first shareable
+business service. The owner portal is available at `https://111.229.205.99` with a trusted
 short-lived IP certificate. Owner authentication uses an Argon2id password,
 TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
 protection. Anonymous requests cannot read the service directory APIs.
@@ -42,13 +41,11 @@ tokens are never stored.
 
 ```sh
 make test-control
-make test-demo-decider
-make test-demo-counter
+make test-drop
 make compose-config
 make dev-up
 make dev-check
 make public-check
-make demos-check
 ```
 
 The development portal is bound to `127.0.0.1:18080`. Traefik's development
@@ -58,6 +55,15 @@ The public edge binds only the server's private `eth0` address on ports 80 and
 443. Port 80 serves ACME HTTP-01 challenges and redirects all other requests.
 The certificate renewal timer checks twice daily and deploys renewed material
 to Traefik without storing certificates in Git.
+
+Static host firewall policy is intentionally minimal and lives in
+`deploy/host`. Docker, Tailscale, and Fail2Ban own their dynamic rules; their
+runtime chains must not be captured with `iptables-save` and restored at boot.
+The same directory contains bounded journald and Docker logging defaults to
+prevent routine logs from consuming the small system disk.
+Install or refresh these host settings with `make host-baseline`. The installer
+does not restart Docker; its logging defaults take effect after the next planned
+daemon restart.
 
 ## Repository layout
 

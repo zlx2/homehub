@@ -1,0 +1,13 @@
+[Unit]
+Description=HomeHub static host firewall rules
+After=network-online.target endlessh.service
+Wants=network-online.target endlessh.service
+Before=fail2ban.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homehub-host-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

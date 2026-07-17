@@ -39,26 +39,6 @@
 	  "visibility": "shared",
 	  "share_enabled": true,
 	  "health_url": "http://drop:8080/health/ready"
-	},
-	{
-      "id": "demo-decider",
-      "name": "随机决策器",
-      "description": "Go 编写的无状态随机选择器，用于验证网关鉴权、路由和服务分享。",
-      "icon": "D",
-      "route": "/demo/decider/",
-      "visibility": "shared",
-      "share_enabled": true,
-      "health_url": "http://demo-decider:8080/health/live"
-    },
-    {
-      "id": "demo-counter",
-      "name": "共享计数器",
-      "description": "Rust 与独立 SQLite 构成的持久化服务，用于验证写操作和数据隔离。",
-      "icon": "N",
-      "route": "/demo/counter/",
-      "visibility": "shared",
-      "share_enabled": true,
-      "health_url": "http://demo-counter:8080/health/live"
     }
   ]
 }

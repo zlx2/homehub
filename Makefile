@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-demo-decider test-demo-counter test-drop format-control format-demo-decider format-drop install-bws bws-migrate secrets-sync edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check demos-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-drop format-control format-drop install-bws bws-migrate secrets-sync host-baseline edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -17,16 +17,6 @@ compose-config: ## Validate the development Compose configuration
 test-control: ## Run HomeHub Control unit tests in the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
 
-test-demo-decider: ## Run the Go demo service unit tests
-	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build -v "$(CURDIR)/services/demo-decider:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
-
-test-demo-counter: ## Run the Rust demo service unit tests
-	@docker build --network host --target test -f services/demo-counter/Dockerfile \
-		--build-arg HTTP_PROXY=http://127.0.0.1:1081 \
-		--build-arg HTTPS_PROXY=http://127.0.0.1:1081 \
-		--build-arg http_proxy=http://127.0.0.1:1081 \
-		--build-arg https_proxy=http://127.0.0.1:1081 .
-
 test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
 	@docker build --network host -f services/drop/Dockerfile -t homehub/drop:test .
 
@@ -42,11 +32,11 @@ bws-migrate: ## Upsert existing HomeHub runtime secrets into Bitwarden
 secrets-sync: ## Materialize HomeHub runtime secret files from Bitwarden
 	@sudo ./deploy/scripts/materialize-secrets-from-bws.py
 
+host-baseline: ## Install bounded logging and the minimal static host firewall
+	@sudo ./deploy/scripts/install-host-baseline.sh
+
 format-control: ## Format HomeHub Control Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
-
-format-demo-decider: ## Format the Go demo service source
-	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/demo-decider:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w .
 
 edge-up: ## Start the loopback-only Traefik development edge
 	@docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) up -d traefik
@@ -69,9 +59,6 @@ beszel-bootstrap: ## Initialize Beszel data and its local agent identity
 
 beszel-check: ## Verify the protected server panel and local agent
 	@./deploy/scripts/check-running-beszel.sh
-
-demos-check: ## Verify demo health and anonymous access denial
-	@./deploy/scripts/check-running-demos.sh
 
 edge-down: ## Stop only this repository's development edge stack
 	@docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) down
