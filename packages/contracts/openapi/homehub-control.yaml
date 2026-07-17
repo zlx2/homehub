@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: HomeHub Control API
-  version: 0.2.0
-  description: Owner authentication and service-directory contract for HomeHub.
+  version: 0.3.0
+  description: Authentication, service authorization, and service-directory contract for HomeHub.
 servers:
   - url: https://111.229.205.99
 paths:
@@ -103,6 +103,49 @@ paths:
         "200": { description: One registered service. }
         "401": { description: Authentication is required. }
         "404": { description: Service is not registered. }
+  /api/v1/admin/principals:
+    get:
+      operationId: listPrincipals
+      security: [{ ownerSession: [] }]
+      responses:
+        "200": { description: Principals available as service-grant subjects. }
+        "403": { description: Administrator scope is required. }
+  /api/v1/admin/service-grants:
+    get:
+      operationId: listServiceGrants
+      security: [{ ownerSession: [] }]
+      responses:
+        "200": { description: Active, unexpired service grants. }
+        "403": { description: Administrator scope is required. }
+    post:
+      operationId: createServiceGrant
+      security: [{ ownerSession: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceGrantRequest"
+      responses:
+        "201": { description: Service grant created or renewed. }
+        "400": { description: Principal, service, or expiry is invalid. }
+        "403": { description: Administrator, Origin, or CSRF validation failed. }
+  /api/v1/admin/service-grants/{id}:
+    delete:
+      operationId: revokeServiceGrant
+      security: [{ ownerSession: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Service grant revoked. }
+        "403": { description: Administrator, Origin, or CSRF validation failed. }
+        "404": { description: Active grant was not found. }
 components:
   securitySchemes:
     ownerSession:
@@ -139,3 +182,13 @@ components:
       properties:
         setup_id: { type: string, format: uuid }
         totp_code: { type: string, pattern: "^[0-9]{6}$" }
+    ServiceGrantRequest:
+      type: object
+      additionalProperties: false
+      required: [principal_id, service_id]
+      properties:
+        principal_id: { type: string, format: uuid }
+        service_id: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$" }
+        expires_at:
+          type: [string, "null"]
+          format: date-time

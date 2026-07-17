@@ -13,7 +13,8 @@
 
 - Compose and labels: deployment, networking, route declarations, catalog defaults.
 - Bitwarden Secrets Manager: credentials, signing keys, provider API keys.
-- HomeHub Control database: sessions, grants, scopes, runtime policy overrides.
+- HomeHub Control database: principals, sessions, service grants, expiry,
+  revocation, scopes, and audit events.
 - Service database: service-owned business data.
 
 ## Network intent

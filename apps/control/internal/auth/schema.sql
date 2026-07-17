@@ -72,4 +72,21 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 CREATE INDEX IF NOT EXISTS audit_events_login_idx ON audit_events(event_type, created_at, subject_hash);
 
+CREATE TABLE IF NOT EXISTS service_grants (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    principal_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    service_id text NOT NULL,
+    granted_by uuid REFERENCES principals(id) ON DELETE SET NULL,
+    expires_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (service_id ~ '^[a-z][a-z0-9-]{1,62}$')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS service_grants_active_idx
+    ON service_grants(principal_id, service_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS service_grants_lookup_idx
+    ON service_grants(principal_id, service_id, expires_at) WHERE revoked_at IS NULL;
+
 INSERT INTO homehub_schema_migrations(version) VALUES (1) ON CONFLICT DO NOTHING;
+INSERT INTO homehub_schema_migrations(version) VALUES (2) ON CONFLICT DO NOTHING;

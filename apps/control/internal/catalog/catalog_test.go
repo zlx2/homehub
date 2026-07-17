@@ -34,6 +34,29 @@ func TestLoadRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestMatchRouteUsesSegmentBoundaryAndLongestRoute(t *testing.T) {
+	services := []Service{
+		{ID: "chat", Route: "/chat/"},
+		{ID: "chat-admin", Route: "/chat/admin/"},
+	}
+	tests := []struct {
+		uri    string
+		wantID string
+		wantOK bool
+	}{
+		{uri: "/chat", wantID: "chat", wantOK: true},
+		{uri: "/chat/room?x=1", wantID: "chat", wantOK: true},
+		{uri: "/chat/admin/users", wantID: "chat-admin", wantOK: true},
+		{uri: "/chatter", wantOK: false},
+	}
+	for _, test := range tests {
+		service, ok := MatchRoute(services, test.uri)
+		if ok != test.wantOK || service.ID != test.wantID {
+			t.Fatalf("MatchRoute(%q) = (%q, %v), want (%q, %v)", test.uri, service.ID, ok, test.wantID, test.wantOK)
+		}
+	}
+}
+
 func writeCatalog(t *testing.T, contents string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "services.json")

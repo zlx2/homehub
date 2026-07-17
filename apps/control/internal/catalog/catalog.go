@@ -74,3 +74,23 @@ func validate(service Service) error {
 	}
 	return nil
 }
+
+func MatchRoute(services []Service, requestURI string) (Service, bool) {
+	path := strings.TrimSpace(strings.SplitN(requestURI, "?", 2)[0])
+	var matched Service
+	matchedLength := -1
+	for _, service := range services {
+		base := strings.TrimSuffix(service.Route, "/")
+		if base == "" {
+			continue
+		}
+		if path != base && !strings.HasPrefix(path, base+"/") {
+			continue
+		}
+		if len(base) > matchedLength {
+			matched = service
+			matchedLength = len(base)
+		}
+	}
+	return matched, matchedLength >= 0
+}

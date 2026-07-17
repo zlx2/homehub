@@ -78,6 +78,10 @@ func New(options Options) http.Handler {
 	mux.Handle("GET /api/v1/system", api.requireAuth(http.HandlerFunc(api.system)))
 	mux.Handle("GET /api/v1/services", api.requireAuth(http.HandlerFunc(api.listServices)))
 	mux.Handle("GET /api/v1/services/{id}", api.requireAuth(http.HandlerFunc(api.getService)))
+	mux.Handle("GET /api/v1/admin/principals", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listPrincipals))))
+	mux.Handle("GET /api/v1/admin/service-grants", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listServiceGrants))))
+	mux.Handle("POST /api/v1/admin/service-grants", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.createServiceGrant))))
+	mux.Handle("DELETE /api/v1/admin/service-grants/{id}", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.deleteServiceGrant))))
 	return api.recover(api.requestID(api.securityHeaders(api.logRequests(mux))))
 }
 
@@ -127,35 +131,51 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
 		return
 	}
-	if !forwardAuthAllowed(principal, request.Header.Get("X-Forwarded-Uri")) {
+	service, matched := catalog.MatchRoute(api.services, request.Header.Get("X-Forwarded-Uri"))
+	if !matched {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "service_route_unregistered"})
+		return
+	}
+	allowed, err := api.serviceAllowed(request.Context(), principal, service)
+	if err != nil {
+		api.logger.Error("authorize service", "service_id", service.ID, "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	if !allowed {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
 		return
 	}
 	writer.Header().Set("X-HomeHub-Principal-ID", principal.ID)
 	writer.Header().Set("X-HomeHub-Principal", principal.Username)
 	writer.Header().Set("X-HomeHub-Email", principal.Username+"@homehub.local")
-	if isServerPanelURI(request.Header.Get("X-Forwarded-Uri")) {
+	if service.ID == "server-monitor" {
 		writer.Header().Set("X-HomeHub-Beszel-Email", "owner@homehub.local")
 	}
 	writer.Header().Set("X-HomeHub-Scopes", strings.Join(principal.Scopes, " "))
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func forwardAuthAllowed(principal auth.Principal, forwardedURI string) bool {
-	if !isServerPanelURI(forwardedURI) {
-		return true
+func (api *server) serviceAllowed(ctx context.Context, principal auth.Principal, service catalog.Service) (bool, error) {
+	if serviceAccessAllowed(principal, service, false) {
+		return true, nil
 	}
-	for _, scope := range principal.Scopes {
-		if scope == "admin" {
-			return true
-		}
+	if service.Visibility != "shared" || !service.ShareEnabled {
+		return false, nil
 	}
-	return false
+	serviceIDs, err := api.auth.ActiveServiceIDs(ctx, principal.ID)
+	if err != nil {
+		return false, err
+	}
+	_, allowed := serviceIDs[service.ID]
+	return serviceAccessAllowed(principal, service, allowed), nil
 }
 
-func isServerPanelURI(forwardedURI string) bool {
-	path := strings.TrimSpace(strings.SplitN(forwardedURI, "?", 2)[0])
-	return path == "/server" || strings.HasPrefix(path, "/server/")
+func serviceAccessAllowed(principal auth.Principal, service catalog.Service, hasGrant bool) bool {
+	if auth.HasScope(principal, "admin") {
+		return true
+	}
+	return service.Visibility == "shared" && service.ShareEnabled && hasGrant
 }
 
 func (api *server) beginSetup(writer http.ResponseWriter, request *http.Request) {
@@ -286,6 +306,17 @@ func (api *server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+func (api *server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		principal, ok := request.Context().Value(principalContextKey{}).(auth.Principal)
+		if !ok || !auth.HasScope(principal, "admin") {
+			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "admin_required"})
+			return
+		}
+		next.ServeHTTP(writer, request)
+	})
+}
+
 func (api *server) authenticate(request *http.Request) (auth.Principal, error) {
 	return api.auth.Authenticate(request.Context(), api.sessionToken(request))
 }
@@ -366,10 +397,22 @@ type healthResponse struct {
 	LatencyMS int64     `json:"latency_ms"`
 }
 
-func (api *server) listServices(writer http.ResponseWriter, _ *http.Request) {
+func (api *server) listServices(writer http.ResponseWriter, request *http.Request) {
 	statuses := api.statuses.Snapshot()
 	services := make([]serviceResponse, 0, len(api.services))
+	principal, hasPrincipal := request.Context().Value(principalContextKey{}).(auth.Principal)
 	for _, service := range api.services {
+		if hasPrincipal {
+			allowed, err := api.serviceAllowed(request.Context(), principal, service)
+			if err != nil {
+				api.logger.Error("filter service catalog", "service_id", service.ID, "error", err)
+				writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+				return
+			}
+			if !allowed {
+				continue
+			}
+		}
 		services = append(services, publicService(service, statuses[service.ID]))
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{
@@ -383,11 +426,125 @@ func (api *server) getService(writer http.ResponseWriter, request *http.Request)
 	statuses := api.statuses.Snapshot()
 	for _, service := range api.services {
 		if service.ID == id {
+			if principal, ok := request.Context().Value(principalContextKey{}).(auth.Principal); ok {
+				allowed, err := api.serviceAllowed(request.Context(), principal, service)
+				if err != nil {
+					api.logger.Error("authorize service detail", "service_id", service.ID, "error", err)
+					writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+					return
+				}
+				if !allowed {
+					writeJSON(writer, http.StatusNotFound, map[string]string{"error": "service_not_found"})
+					return
+				}
+			}
 			writeJSON(writer, http.StatusOK, publicService(service, statuses[service.ID]))
 			return
 		}
 	}
 	writeJSON(writer, http.StatusNotFound, map[string]string{"error": "service_not_found"})
+}
+
+func (api *server) listPrincipals(writer http.ResponseWriter, request *http.Request) {
+	principals, err := api.auth.ListPrincipals(request.Context())
+	if err != nil {
+		api.logger.Error("list principals", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"principals": principals})
+}
+
+func (api *server) listServiceGrants(writer http.ResponseWriter, request *http.Request) {
+	grants, err := api.auth.ListServiceGrants(request.Context())
+	if err != nil {
+		api.logger.Error("list service grants", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"grants": grants})
+}
+
+func (api *server) createServiceGrant(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	var input struct {
+		PrincipalID string     `json:"principal_id"`
+		ServiceID   string     `json:"service_id"`
+		ExpiresAt   *time.Time `json:"expires_at"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now().UTC()) {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "expiry_must_be_future"})
+		return
+	}
+	service, exists := api.findService(input.ServiceID)
+	if !exists || service.Visibility != "shared" || !service.ShareEnabled {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "service_not_shareable"})
+		return
+	}
+	principalExists, err := api.auth.PrincipalExists(request.Context(), input.PrincipalID)
+	if err != nil {
+		api.logger.Error("validate grant principal", "error", err)
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_principal_id"})
+		return
+	}
+	if !principalExists {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "principal_not_found"})
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	grant, err := api.auth.GrantService(request.Context(), actor.ID, input.PrincipalID, input.ServiceID, input.ExpiresAt, remoteIP(request))
+	if err != nil {
+		api.logger.Error("grant service", "service_id", input.ServiceID, "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusCreated, grant)
+}
+
+func (api *server) deleteServiceGrant(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	revoked, err := api.auth.RevokeServiceGrant(request.Context(), actor.ID, request.PathValue("id"), remoteIP(request))
+	if err != nil {
+		api.logger.Error("revoke service grant", "error", err)
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_grant_id"})
+		return
+	}
+	if !revoked {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "grant_not_found"})
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) findService(id string) (catalog.Service, bool) {
+	for _, service := range api.services {
+		if service.ID == id {
+			return service, true
+		}
+	}
+	return catalog.Service{}, false
+}
+
+func (api *server) validMutation(request *http.Request) bool {
+	if !api.validOrigin(request) {
+		return false
+	}
+	csrfCookie, err := request.Cookie(api.csrfCookieName())
+	if err != nil {
+		return false
+	}
+	csrf := request.Header.Get("X-CSRF-Token")
+	return csrf != "" && csrf == csrfCookie.Value && api.auth.ValidateCSRF(request.Context(), api.sessionToken(request), csrf)
 }
 
 func publicService(service catalog.Service, status health.Result) serviceResponse {

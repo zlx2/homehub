@@ -25,6 +25,11 @@ ForwardAuth, maps an authenticated HomeHub administrator to its internal owner
 account, and is restricted to the `admin` scope. Its local agent has no TCP
 listener and reaches Docker only through a loopback-bound read-only socket proxy.
 
+Service access is deny-by-default. Administrators can access every registered
+service; other principals only see and reach services explicitly marked as
+shareable and covered by an active, unexpired grant. Runtime grants live in the
+Control database and grant changes are CSRF-protected and audited.
+
 ## Development verification
 
 ```sh

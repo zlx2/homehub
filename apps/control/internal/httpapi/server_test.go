@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -25,26 +26,44 @@ func (statuses staticStatuses) Snapshot() map[string]health.Result {
 	return result
 }
 
-func TestForwardAuthRequiresAdminForServerPanel(t *testing.T) {
+func TestServiceAccessPolicy(t *testing.T) {
 	tests := []struct {
 		name      string
-		uri       string
 		scopes    []string
+		service   catalog.Service
+		hasGrant  bool
 		wantAllow bool
 	}{
-		{name: "admin panel", uri: "/server/", scopes: []string{"portal.view", "admin"}, wantAllow: true},
-		{name: "non-admin panel", uri: "/server/system", scopes: []string{"portal.view"}, wantAllow: false},
-		{name: "query does not bypass", uri: "/server?tab=system", scopes: []string{"portal.view"}, wantAllow: false},
-		{name: "similar path is not panel", uri: "/serverless", scopes: []string{"portal.view"}, wantAllow: true},
-		{name: "other protected service", uri: "/chat", scopes: []string{"portal.view"}, wantAllow: true},
+		{name: "admin owner service", scopes: []string{"portal.view", "admin"}, service: catalog.Service{Visibility: "owner"}, wantAllow: true},
+		{name: "friend owner service", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "owner"}, hasGrant: true, wantAllow: false},
+		{name: "friend shared with grant", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "shared", ShareEnabled: true}, hasGrant: true, wantAllow: true},
+		{name: "friend shared without grant", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "shared", ShareEnabled: true}, wantAllow: false},
+		{name: "sharing disabled", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "shared", ShareEnabled: false}, hasGrant: true, wantAllow: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			principal := auth.Principal{Username: "owner", Scopes: test.scopes}
-			if got := forwardAuthAllowed(principal, test.uri); got != test.wantAllow {
-				t.Fatalf("forwardAuthAllowed() = %v, want %v", got, test.wantAllow)
+			if got := serviceAccessAllowed(principal, test.service, test.hasGrant); got != test.wantAllow {
+				t.Fatalf("serviceAccessAllowed() = %v, want %v", got, test.wantAllow)
 			}
 		})
+	}
+}
+
+func TestRequireAdminDeniesNonAdminPrincipal(t *testing.T) {
+	api := &server{}
+	handler := api.requireAdmin(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/principals", nil)
+	request = request.WithContext(context.WithValue(request.Context(), principalContextKey{}, auth.Principal{
+		ID: "friend", Scopes: []string{"portal.view"},
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
 	}
 }
 

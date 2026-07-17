@@ -71,6 +71,25 @@ type Principal struct {
 	Scopes      []string `json:"scopes"`
 }
 
+type PrincipalSummary struct {
+	ID          string    `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type ServiceGrant struct {
+	ID          string     `json:"id"`
+	PrincipalID string     `json:"principal_id"`
+	Username    string     `json:"username"`
+	ServiceID   string     `json:"service_id"`
+	GrantedBy   *string    `json:"granted_by,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type Setup struct {
 	ID              string    `json:"setup_id"`
 	ManualSecret    string    `json:"manual_secret"`
@@ -427,6 +446,128 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	hash := tokenHash(token)
 	_, err := s.pool.Exec(ctx, "UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL", hash[:])
 	return err
+}
+
+func HasScope(principal Principal, required string) bool {
+	for _, scope := range principal.Scopes {
+		if scope == required {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) ActiveServiceIDs(ctx context.Context, principalID string) (map[string]struct{}, error) {
+	rows, err := s.pool.Query(ctx, `SELECT service_id FROM service_grants
+		WHERE principal_id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())`, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	serviceIDs := make(map[string]struct{})
+	for rows.Next() {
+		var serviceID string
+		if err := rows.Scan(&serviceID); err != nil {
+			return nil, err
+		}
+		serviceIDs[serviceID] = struct{}{}
+	}
+	return serviceIDs, rows.Err()
+}
+
+func (s *Service) ListPrincipals(ctx context.Context) ([]PrincipalSummary, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id,username,display_name,status,created_at
+		FROM principals ORDER BY lower(username)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	principals := make([]PrincipalSummary, 0)
+	for rows.Next() {
+		var principal PrincipalSummary
+		if err := rows.Scan(&principal.ID, &principal.Username, &principal.DisplayName, &principal.Status, &principal.CreatedAt); err != nil {
+			return nil, err
+		}
+		principals = append(principals, principal)
+	}
+	return principals, rows.Err()
+}
+
+func (s *Service) PrincipalExists(ctx context.Context, principalID string) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM principals WHERE id=$1 AND status='active')`, principalID).Scan(&exists)
+	return exists, err
+}
+
+func (s *Service) ListServiceGrants(ctx context.Context) ([]ServiceGrant, error) {
+	rows, err := s.pool.Query(ctx, `SELECT g.id,g.principal_id,p.username,g.service_id,g.granted_by,g.expires_at,g.created_at,g.updated_at
+		FROM service_grants g JOIN principals p ON p.id=g.principal_id
+		WHERE g.revoked_at IS NULL AND (g.expires_at IS NULL OR g.expires_at>now())
+		ORDER BY lower(p.username),g.service_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	grants := make([]ServiceGrant, 0)
+	for rows.Next() {
+		var grant ServiceGrant
+		if err := rows.Scan(&grant.ID, &grant.PrincipalID, &grant.Username, &grant.ServiceID, &grant.GrantedBy, &grant.ExpiresAt, &grant.CreatedAt, &grant.UpdatedAt); err != nil {
+			return nil, err
+		}
+		grants = append(grants, grant)
+	}
+	return grants, rows.Err()
+}
+
+func (s *Service) GrantService(ctx context.Context, actor, principalID, serviceID string, expiresAt *time.Time, remoteIP string) (ServiceGrant, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ServiceGrant{}, err
+	}
+	defer tx.Rollback(ctx)
+	var grant ServiceGrant
+	err = tx.QueryRow(ctx, `INSERT INTO service_grants(principal_id,service_id,granted_by,expires_at)
+		VALUES($1,$2,$3,$4)
+		ON CONFLICT (principal_id,service_id) WHERE revoked_at IS NULL
+		DO UPDATE SET granted_by=EXCLUDED.granted_by,expires_at=EXCLUDED.expires_at,updated_at=now()
+		RETURNING id,principal_id,service_id,granted_by,expires_at,created_at,updated_at`, principalID, serviceID, actor, expiresAt).
+		Scan(&grant.ID, &grant.PrincipalID, &grant.ServiceID, &grant.GrantedBy, &grant.ExpiresAt, &grant.CreatedAt, &grant.UpdatedAt)
+	if err != nil {
+		return ServiceGrant{}, err
+	}
+	if err := tx.QueryRow(ctx, "SELECT username FROM principals WHERE id=$1", principalID).Scan(&grant.Username); err != nil {
+		return ServiceGrant{}, err
+	}
+	subject := tokenHash(principalID + ":" + serviceID)
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(principal_id,event_type,outcome,remote_ip,subject_hash)
+		VALUES($1,'service_grant','success',$2,$3)`, actor, nullableIP(remoteIP), subject[:])
+	if err != nil {
+		return ServiceGrant{}, err
+	}
+	return grant, tx.Commit(ctx)
+}
+
+func (s *Service) RevokeServiceGrant(ctx context.Context, actor, grantID, remoteIP string) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	result, err := tx.Exec(ctx, `UPDATE service_grants SET revoked_at=now(),updated_at=now()
+		WHERE id=$1 AND revoked_at IS NULL`, grantID)
+	if err != nil {
+		return false, err
+	}
+	if result.RowsAffected() == 0 {
+		return false, nil
+	}
+	subject := tokenHash(grantID)
+	_, err = tx.Exec(ctx, `INSERT INTO audit_events(principal_id,event_type,outcome,remote_ip,subject_hash)
+		VALUES($1,'service_grant_revoke','success',$2,$3)`, actor, nullableIP(remoteIP), subject[:])
+	if err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 func createSessionTx(ctx context.Context, tx pgx.Tx, principal Principal, remoteIP, userAgent string) (Session, error) {
