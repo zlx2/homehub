@@ -50,6 +50,33 @@ func TestServiceAccessPolicy(t *testing.T) {
 	}
 }
 
+func TestAPITokenOnlyAllowsDropCreateItem(t *testing.T) {
+	identity := auth.APITokenIdentity{
+		Principal: auth.Principal{Scopes: []string{"drop.upload"}},
+		ServiceID: "drop",
+	}
+	service := catalog.Service{ID: "drop"}
+	tests := []struct {
+		method string
+		uri    string
+		allow  bool
+	}{
+		{method: http.MethodPost, uri: "/drop/api/v1/items", allow: true},
+		{method: http.MethodGet, uri: "/drop/api/v1/items", allow: false},
+		{method: http.MethodDelete, uri: "/drop/api/v1/items/abc", allow: false},
+		{method: http.MethodPost, uri: "/drop/api/v1/items/abc", allow: false},
+		{method: http.MethodPost, uri: "/drop/api/v1/items?ttl=1", allow: true},
+	}
+	for _, test := range tests {
+		if got := apiTokenRequestAllowed(identity, service, test.method, test.uri); got != test.allow {
+			t.Fatalf("%s %s allowed=%v, want %v", test.method, test.uri, got, test.allow)
+		}
+	}
+	if apiTokenRequestAllowed(identity, catalog.Service{ID: "chat"}, http.MethodPost, "/drop/api/v1/items") {
+		t.Fatal("token crossed service boundary")
+	}
+}
+
 func TestAuthCheckIssuesIdentityForOptedInService(t *testing.T) {
 	issuer := &recordingIdentityIssuer{token: "signed-identity"}
 	api := &server{identityIssuer: issuer}

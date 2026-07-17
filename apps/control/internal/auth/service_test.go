@@ -78,3 +78,24 @@ func TestOpaqueTokensUseDifferentHashes(t *testing.T) {
 		t.Fatal("independent tokens collided")
 	}
 }
+
+func TestAPITokenSpecIsNarrowAndTimeBound(t *testing.T) {
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	if err := validateAPITokenSpec("iPhone", "drop", []string{"drop.upload"}, now.Add(365*24*time.Hour), now); err != nil {
+		t.Fatalf("valid token rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name      string
+		serviceID string
+		scopes    []string
+		expiresAt time.Time
+	}{
+		{name: "wrong service", serviceID: "rolechat", scopes: []string{"drop.upload"}, expiresAt: now.Add(time.Hour)},
+		{name: "broad scope", serviceID: "drop", scopes: []string{"admin"}, expiresAt: now.Add(time.Hour)},
+		{name: "too long", serviceID: "drop", scopes: []string{"drop.upload"}, expiresAt: now.Add(367 * 24 * time.Hour)},
+	} {
+		if err := validateAPITokenSpec(test.name, test.serviceID, test.scopes, test.expiresAt, now); err == nil {
+			t.Fatalf("%s should fail", test.name)
+		}
+	}
+}

@@ -62,6 +62,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_principal_idx ON sessions(principal_id);
 CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(idle_expires_at, absolute_expires_at);
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    principal_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    token_hash bytea NOT NULL UNIQUE,
+    service_id text NOT NULL,
+    scopes text[] NOT NULL,
+    expires_at timestamptz NOT NULL,
+    last_used_at timestamptz,
+    revoked_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (length(name) BETWEEN 1 AND 80),
+    CHECK (service_id ~ '^[a-z][a-z0-9-]{1,62}$'),
+    CHECK (cardinality(scopes) > 0),
+    CHECK (expires_at > created_at)
+);
+CREATE INDEX IF NOT EXISTS api_tokens_principal_idx ON api_tokens(principal_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS api_tokens_expiry_idx ON api_tokens(expires_at) WHERE revoked_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS audit_events (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     principal_id uuid REFERENCES principals(id) ON DELETE SET NULL,
@@ -119,3 +138,4 @@ INSERT INTO homehub_schema_migrations(version) VALUES (1) ON CONFLICT DO NOTHING
 INSERT INTO homehub_schema_migrations(version) VALUES (2) ON CONFLICT DO NOTHING;
 INSERT INTO homehub_schema_migrations(version) VALUES (3) ON CONFLICT DO NOTHING;
 INSERT INTO homehub_schema_migrations(version) VALUES (4) ON CONFLICT DO NOTHING;
+INSERT INTO homehub_schema_migrations(version) VALUES (5) ON CONFLICT DO NOTHING;

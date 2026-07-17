@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: HomeHub Device Token Admin API
+  version: 1.0.0
+  description: Owner-only API for issuing and revoking narrowly scoped device automation tokens.
+servers:
+  - url: /
+security:
+  - homeHubSession: []
+paths:
+  /api/v1/admin/api-tokens:
+    get:
+      summary: List the owner's device tokens
+      responses:
+        "200":
+          description: Token metadata; raw token values are never returned.
+    post:
+      summary: Create a device token
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, service_id, scopes, expires_at]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 80}
+                service_id: {type: string, const: drop}
+                scopes:
+                  type: array
+                  prefixItems: [{const: drop.upload}]
+                  minItems: 1
+                  maxItems: 1
+                expires_at: {type: string, format: date-time}
+      responses:
+        "201":
+          description: Created; the response contains the raw token exactly once.
+        "400": {description: Invalid scope or expiry}
+  /api/v1/admin/api-tokens/{id}:
+    delete:
+      summary: Revoke a device token
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204": {description: Revoked}
+        "404": {description: Token not found}
+components:
+  securitySchemes:
+    homeHubSession:
+      type: apiKey
+      in: cookie
+      name: homehub_session
+  parameters:
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string}

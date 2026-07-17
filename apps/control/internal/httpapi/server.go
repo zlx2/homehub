@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -95,6 +96,9 @@ func New(options Options) http.Handler {
 	mux.Handle("GET /api/v1/admin/invitations", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listInvitations))))
 	mux.Handle("POST /api/v1/admin/invitations", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.createInvitation))))
 	mux.Handle("DELETE /api/v1/admin/invitations/{id}", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.deleteInvitation))))
+	mux.Handle("GET /api/v1/admin/api-tokens", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.listAPITokens))))
+	mux.Handle("POST /api/v1/admin/api-tokens", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.createAPIToken))))
+	mux.Handle("DELETE /api/v1/admin/api-tokens/{id}", api.requireAuth(api.requireAdmin(http.HandlerFunc(api.deleteAPIToken))))
 	return api.recover(api.requestID(api.securityHeaders(api.logRequests(mux))))
 }
 
@@ -139,7 +143,7 @@ func (api *server) authSession(writer http.ResponseWriter, request *http.Request
 }
 
 func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) {
-	principal, err := api.authenticate(request)
+	principal, tokenIdentity, err := api.authenticateForwardRequest(request)
 	if err != nil {
 		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
 		return
@@ -149,11 +153,16 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "service_route_unregistered"})
 		return
 	}
-	allowed, err := api.serviceAllowed(request.Context(), principal, service)
-	if err != nil {
-		api.logger.Error("authorize service", "service_id", service.ID, "error", err)
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
-		return
+	allowed := false
+	if tokenIdentity != nil {
+		allowed = apiTokenRequestAllowed(*tokenIdentity, service, request.Header.Get("X-Forwarded-Method"), request.Header.Get("X-Forwarded-Uri"))
+	} else {
+		allowed, err = api.serviceAllowed(request.Context(), principal, service)
+		if err != nil {
+			api.logger.Error("authorize service", "service_id", service.ID, "error", err)
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+			return
+		}
 	}
 	if !allowed {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "insufficient_scope"})
@@ -399,6 +408,34 @@ func (api *server) requireAdmin(next http.Handler) http.Handler {
 
 func (api *server) authenticate(request *http.Request) (auth.Principal, error) {
 	return api.auth.Authenticate(request.Context(), api.sessionToken(request))
+}
+
+func (api *server) authenticateForwardRequest(request *http.Request) (auth.Principal, *auth.APITokenIdentity, error) {
+	header := strings.TrimSpace(request.Header.Get("Authorization"))
+	if header != "" {
+		const prefix = "Bearer "
+		if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+			return auth.Principal{}, nil, auth.ErrInvalidCredentials
+		}
+		identity, err := api.auth.AuthenticateAPIToken(request.Context(), strings.TrimSpace(header[len(prefix):]))
+		if err != nil {
+			return auth.Principal{}, nil, err
+		}
+		return identity.Principal, &identity, nil
+	}
+	principal, err := api.authenticate(request)
+	return principal, nil, err
+}
+
+func apiTokenRequestAllowed(identity auth.APITokenIdentity, service catalog.Service, method, rawURI string) bool {
+	if identity.ServiceID != service.ID || !auth.HasScope(identity.Principal, "drop.upload") {
+		return false
+	}
+	if strings.ToUpper(strings.TrimSpace(method)) != http.MethodPost {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(rawURI)
+	return err == nil && parsed.Path == "/drop/api/v1/items"
 }
 
 func (api *server) sessionToken(request *http.Request) string {
@@ -662,6 +699,64 @@ func (api *server) deleteInvitation(writer http.ResponseWriter, request *http.Re
 	}
 	if !revoked {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "invitation_not_found"})
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) listAPITokens(writer http.ResponseWriter, request *http.Request) {
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	tokens, err := api.auth.ListAPITokens(request.Context(), actor.ID)
+	if err != nil {
+		api.logger.Error("list API tokens", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"tokens": tokens})
+}
+
+func (api *server) createAPIToken(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	var input struct {
+		Name      string    `json:"name"`
+		ServiceID string    `json:"service_id"`
+		Scopes    []string  `json:"scopes"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	created, err := api.auth.CreateAPIToken(request.Context(), actor.ID, input.Name, input.ServiceID, input.Scopes, input.ExpiresAt, remoteIP(request))
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidAPIToken) || errors.Is(err, auth.ErrTooManyAPITokens) {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_api_token", "message": err.Error()})
+			return
+		}
+		api.logger.Error("create API token", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
+	writeJSON(writer, http.StatusCreated, created)
+}
+
+func (api *server) deleteAPIToken(writer http.ResponseWriter, request *http.Request) {
+	if !api.validMutation(request) {
+		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_csrf_or_origin"})
+		return
+	}
+	actor := request.Context().Value(principalContextKey{}).(auth.Principal)
+	revoked, err := api.auth.RevokeAPIToken(request.Context(), actor.ID, request.PathValue("id"), remoteIP(request))
+	if err != nil {
+		api.logger.Error("revoke API token", "error", err)
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_api_token_id"})
+		return
+	}
+	if !revoked {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "api_token_not_found"})
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)

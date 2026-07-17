@@ -53,6 +53,10 @@ paths:
     post:
       tags: [Items]
       summary: Create a temporary item
+      description: Browser sessions and HomeHub device tokens scoped to `drop.upload` may create items.
+      security:
+        - homeHubSession: []
+        - homeHubDeviceToken: []
       parameters:
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
       requestBody:
@@ -150,6 +154,11 @@ components:
       in: cookie
       name: homehub_session
       description: HomeHub edge session; Drop itself receives only a signed internal identity.
+    homeHubDeviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: HomeHub device token
+      description: Revocable token restricted at the edge to `POST /drop/api/v1/items`.
   parameters:
     ItemID: {name: id, in: path, required: true, schema: {type: string}}
     AttachmentID: {name: id, in: path, required: true, schema: {type: string}}

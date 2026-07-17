@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"drop/internal/config"
 	"homehub.local/go-sdk/identity"
 )
 
@@ -56,6 +57,53 @@ func TestAuthenticateHomeHubRejectsMissingPortalScope(t *testing.T) {
 		t.Fatal("protected handler must not run")
 	})).ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthenticateHomeHubAllowsUploadTokenOnlyOnCreateItem(t *testing.T) {
+	publicKey, privateKey, _ := ed25519.GenerateKey(nil)
+	verifier, _ := identity.NewVerifier(publicKey, "drop")
+	api := &API{identity: verifier}
+	now := time.Now().UTC()
+	token := signHomeHubIdentity(t, privateKey, identity.Claims{
+		Issuer: identity.Issuer, Audience: "drop", Subject: "iphone", Scopes: []string{"drop.upload"},
+		IssuedAt: now.Unix(), Expires: now.Add(time.Minute).Unix(),
+	})
+	handler := api.authenticateHomeHub(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !principalFrom(request).HasScope("drop.upload") || principalFrom(request).Role != RoleGuest {
+			t.Fatalf("unexpected principal: %+v", principalFrom(request))
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+
+	allowed := httptest.NewRequest(http.MethodPost, "/api/v1/items", nil)
+	allowed.Header.Set(identity.HeaderName, token)
+	allowedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(allowedResponse, allowed)
+	if allowedResponse.Code != http.StatusNoContent {
+		t.Fatalf("upload status=%d body=%s", allowedResponse.Code, allowedResponse.Body.String())
+	}
+
+	denied := httptest.NewRequest(http.MethodGet, "/api/v1/items", nil)
+	denied.Header.Set(identity.HeaderName, token)
+	deniedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deniedResponse, denied)
+	if deniedResponse.Code != http.StatusForbidden {
+		t.Fatalf("list status=%d body=%s", deniedResponse.Code, deniedResponse.Body.String())
+	}
+}
+
+func TestUploadTokenBypassesBrowserOriginCheckOnlyForUpload(t *testing.T) {
+	api := &API{cfg: config.Config{AllowedOrigins: map[string]struct{}{}}}
+	handler := api.requireAllowedOrigin(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/items", nil)
+	request = withPrincipal(request, principal{Role: RoleGuest, Subject: "iphone", Scopes: []string{"drop.upload"}})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

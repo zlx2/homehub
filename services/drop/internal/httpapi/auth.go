@@ -29,6 +29,7 @@ type principal struct {
 	Role      Role
 	Subject   string
 	SessionID int64
+	Scopes    []string
 }
 
 type principalKey struct{}
@@ -40,6 +41,15 @@ func withPrincipal(r *http.Request, value principal) *http.Request {
 func principalFrom(r *http.Request) principal {
 	value, _ := r.Context().Value(principalKey{}).(principal)
 	return value
+}
+
+func (p principal) HasScope(required string) bool {
+	for _, scope := range p.Scopes {
+		if scope == required {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *API) authenticate(entry EntryPoint, next http.Handler) http.Handler {

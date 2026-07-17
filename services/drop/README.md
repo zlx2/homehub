@@ -15,6 +15,9 @@ and authorization to HomeHub Control.
   view storage status.
 - Shared guest (`portal.view` scope): upload, list, and download. Owner-only
   operations return `403`.
+- Device automation (`drop.upload` scope): may only create an item through
+  `POST /drop/api/v1/items`. HomeHub validates the revocable bearer token and
+  converts it to a short-lived, Drop-audience internal identity.
 - Persistence: `/data/drop.db`, `/data/blobs`, and `/data/tmp`. SQLite is the
   durable metadata source; files are stored on the same service-owned volume.
 
