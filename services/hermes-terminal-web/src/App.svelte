@@ -10,6 +10,9 @@
   let noticeTimer: number | undefined;
   let viewportTimer: number | undefined;
   let lastViewportHeight = 0;
+  let composerElement: HTMLTextAreaElement;
+  let mobileMode = false;
+  let draft = '';
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${location.host}/hermes/ws`;
@@ -47,14 +50,45 @@
     window.setTimeout(() => send('\r'), 420);
   }
 
+  function sendDraft() {
+    const value = draft;
+    if (!value.trim()) return;
+    if (connection !== 'connected') return showNotice('终端尚未连接');
+
+    // Keep IME composition entirely inside the native textarea. Hermes only
+    // receives the final committed string, so xterm never sees partial mobile
+    // composition events that some keyboards drop.
+    draft = '';
+    send('\x15');
+    window.setTimeout(() => send(value), 50);
+    window.setTimeout(() => send('\r'), 100);
+  }
+
+  function handleComposerKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    sendDraft();
+  }
+
+  function focusInput() {
+    if (mobileMode) composerElement?.focus();
+    else client?.focus();
+  }
+
   async function pasteClipboard() {
     try {
       const value = await navigator.clipboard.readText();
       if (!value) return showNotice('剪贴板为空');
-      send(value);
-      showNotice('已粘贴');
+      if (mobileMode) {
+        draft += value;
+        composerElement?.focus();
+        showNotice('已粘贴到输入框');
+      } else {
+        send(value);
+        showNotice('已粘贴');
+      }
     } catch {
-      client?.focus();
+      focusInput();
       showNotice('请长按输入区粘贴');
     }
   }
@@ -78,6 +112,7 @@
   }
 
   function updateViewport() {
+    mobileMode = matchMedia('(max-width: 720px), (pointer: coarse)').matches;
     const height = Math.round(window.visualViewport?.height || window.innerHeight);
     if (height === lastViewportHeight) return;
     lastViewportHeight = height;
@@ -145,6 +180,20 @@
     </div>
   </section>
 
+  <form class="mobile-composer" onsubmit={(event) => { event.preventDefault(); sendDraft(); }}>
+    <textarea
+      bind:this={composerElement}
+      bind:value={draft}
+      aria-label="消息输入"
+      enterkeyhint="send"
+      maxlength="12000"
+      placeholder="输入消息或命令…"
+      rows="1"
+      onkeydown={handleComposerKeydown}
+    ></textarea>
+    <button type="submit" disabled={!draft.trim() || connection !== 'connected'}>发送</button>
+  </form>
+
   <nav class="keybar" aria-label="终端快捷键">
     <button onclick={() => send('\x1b')}>Esc</button>
     <button onclick={() => send('\t')}>Tab</button>
@@ -156,7 +205,7 @@
     <button class="arrow" aria-label="方向左" onclick={() => send('\x1b[D')}>←</button>
     <button class="arrow" aria-label="方向右" onclick={() => send('\x1b[C')}>→</button>
     <button onclick={copySelection}>复制</button>
-    <button onclick={() => client?.focus()}>⌨</button>
+    <button onclick={focusInput}>⌨</button>
   </nav>
 
   {#if notice}<div class="toast">{notice}</div>{/if}

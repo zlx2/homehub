@@ -244,6 +244,55 @@ button {
   scrollbar-width: none;
 }
 
+.mobile-composer {
+  z-index: 4;
+  display: none;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left));
+  border-top: 1px solid rgba(217, 220, 227, 0.08);
+  background: rgba(18, 22, 35, 0.98);
+}
+
+.mobile-composer textarea {
+  min-width: 0;
+  height: 42px;
+  flex: 1 1 auto;
+  resize: none;
+  padding: 10px 12px;
+  color: #f0ede5;
+  font: 15px/20px Inter, ui-sans-serif, system-ui, sans-serif;
+  border: 1px solid rgba(185, 191, 208, 0.14);
+  border-radius: 11px;
+  outline: none;
+  background: #222738;
+}
+
+.mobile-composer textarea:focus {
+  border-color: rgba(215, 186, 125, 0.48);
+  box-shadow: 0 0 0 3px rgba(215, 186, 125, 0.08);
+}
+
+.mobile-composer textarea::placeholder {
+  color: #777f94;
+}
+
+.mobile-composer button {
+  flex: 0 0 auto;
+  min-width: 58px;
+  padding: 0 14px;
+  color: #1a1e2b;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 11px;
+  background: #d7ba7d;
+}
+
+.mobile-composer button:disabled {
+  color: #7d8292;
+  background: #292e3f;
+}
+
 .keybar::-webkit-scrollbar {
   display: none;
 }
@@ -333,8 +382,12 @@ button {
     display: flex;
   }
 
+  .mobile-composer {
+    display: flex;
+  }
+
   .toast {
-    bottom: calc(59px + env(safe-area-inset-bottom));
+    bottom: calc(116px + env(safe-area-inset-bottom));
   }
 }
 
@@ -350,5 +403,16 @@ button {
 
   .keybar button {
     height: 32px;
+  }
+
+  .mobile-composer {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .mobile-composer textarea {
+    height: 36px;
+    padding-top: 7px;
+    padding-bottom: 7px;
   }
 }
