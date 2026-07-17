@@ -43,6 +43,12 @@ read-only public key and verify tokens again with the shared Go or Rust SDK.
 Catalog entries explicitly opt in with `identity_enabled`, so adding a service
 does not require another Control code branch.
 
+AI-enabled services also opt in with `ai_enabled` and an exact `ai_models`
+allowlist. Control injects a separate 60-second delegation bound to the source
+service and AI Gateway. The internal-only Go gateway routes stable aliases to
+DeepSeek and OpenCode Go; provider keys exist only in Bitwarden-backed secret
+files mounted into that container.
+
 ## Creating a service
 
 Generate a compile-ready Go or Rust service with its health endpoints,
@@ -56,9 +62,9 @@ make new-service NAME=shared-tool LANG=rust VISIBILITY=shared
 
 Compose automatically discovers `services/*/compose.homehub.yaml`. Generated
 changes remain normal source files and must pass review and tests before they
-are deployed. The provider-neutral AI Gateway skeleton exists under
-`services/ai-gateway`, but is intentionally not registered in production until
-the delegated service-to-AI identity flow from ADR 0005 is implemented.
+are deployed. The AI Gateway implementation lives under `services/ai-gateway`;
+its delegated identity boundary is documented in ADR 0008 and it has no public
+route.
 
 ## Development verification
 
@@ -67,6 +73,7 @@ make test-control
 make test-sdk-go
 make test-sdk-rust
 make test-drop
+make test-ai-gateway
 make compose-config
 make dev-up
 make dev-check

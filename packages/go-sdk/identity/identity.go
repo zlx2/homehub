@@ -24,13 +24,15 @@ const (
 )
 
 type Claims struct {
-	Issuer   string   `json:"iss"`
-	Audience string   `json:"aud"`
-	Subject  string   `json:"sub"`
-	Name     string   `json:"name"`
-	Scopes   []string `json:"scopes"`
-	IssuedAt int64    `json:"iat"`
-	Expires  int64    `json:"exp"`
+	Issuer          string   `json:"iss"`
+	Audience        string   `json:"aud"`
+	Subject         string   `json:"sub"`
+	Name            string   `json:"name"`
+	Scopes          []string `json:"scopes"`
+	AuthorizedParty string   `json:"azp,omitempty"`
+	Models          []string `json:"models,omitempty"`
+	IssuedAt        int64    `json:"iat"`
+	Expires         int64    `json:"exp"`
 }
 
 func (c Claims) HasScope(expected string) bool {

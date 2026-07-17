@@ -34,6 +34,26 @@ func TestLoadRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestLoadValidatesAIPolicy(t *testing.T) {
+	valid := writeCatalog(t, `{"services":[{"id":"assistant","name":"Assistant","visibility":"owner","identity_enabled":true,"ai_enabled":true,"ai_models":["fast","coding"],"health_url":"http://assistant/health"}]}`)
+	services, err := Load(valid)
+	if err != nil || !services[0].AIEnabled || len(services[0].AIModels) != 2 {
+		t.Fatalf("Load() services=%#v error=%v", services, err)
+	}
+
+	for name, contents := range map[string]string{
+		"identity required": `{"services":[{"id":"assistant","name":"Assistant","visibility":"owner","ai_enabled":true,"ai_models":["fast"],"health_url":"http://assistant/health"}]}`,
+		"models required":   `{"services":[{"id":"assistant","name":"Assistant","visibility":"owner","identity_enabled":true,"ai_enabled":true,"health_url":"http://assistant/health"}]}`,
+		"duplicate model":   `{"services":[{"id":"assistant","name":"Assistant","visibility":"owner","identity_enabled":true,"ai_enabled":true,"ai_models":["fast","fast"],"health_url":"http://assistant/health"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(writeCatalog(t, contents)); err == nil {
+				t.Fatal("expected invalid AI policy to fail")
+			}
+		})
+	}
+}
+
 func TestMatchRouteUsesSegmentBoundaryAndLongestRoute(t *testing.T) {
 	services := []Service{
 		{ID: "chat", Route: "/chat/"},

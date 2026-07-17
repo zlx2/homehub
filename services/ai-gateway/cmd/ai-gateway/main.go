@@ -13,12 +13,15 @@ import (
 
 	"homehub.local/go-sdk/httpx"
 	"homehub.local/go-sdk/identity"
+	"homehub.local/services/ai-gateway/internal/config"
+	"homehub.local/services/ai-gateway/internal/gateway"
 	"homehub.local/services/ai-gateway/internal/httpapi"
 )
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		response, err := http.Get("http://127.0.0.1:8080/health/ready")
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get("http://127.0.0.1:8080/health/ready")
 		if err != nil || response.StatusCode != http.StatusNoContent {
 			os.Exit(1)
 		}
@@ -35,11 +38,20 @@ func main() {
 func run(logger *slog.Logger) error {
 	address := env("AI_GATEWAY_LISTEN_ADDRESS", ":8080")
 	keyFile := env("AI_GATEWAY_IDENTITY_PUBLIC_KEY_FILE", "/run/secrets/identity_public_key")
+	configFile := env("AI_GATEWAY_CONFIG_FILE", "/etc/homehub-ai/providers.json")
 	verifier, err := identity.NewVerifierFromFile(keyFile, "ai-gateway")
 	if err != nil {
 		return fmt.Errorf("initialize HomeHub identity: %w", err)
 	}
-	handler := httpx.RequestID(httpx.Recover(logger, httpx.SecurityHeaders(httpapi.New(verifier))))
+	cfg, err := config.Load(configFile)
+	if err != nil {
+		return err
+	}
+	router, err := gateway.New(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize provider router: %w", err)
+	}
+	handler := httpx.RequestID(httpx.Recover(logger, httpx.SecurityHeaders(httpapi.New(verifier, router, logger))))
 	server := &http.Server{
 		Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 0, IdleTimeout: 60 * time.Second,

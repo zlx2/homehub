@@ -337,7 +337,7 @@ def compose_file() -> str:
               traefik.http.routers.homehub-__NAME__-public.entrypoints: public-https
               traefik.http.routers.homehub-__NAME__-public.rule: Path(`/__NAME__`) || PathPrefix(`/__NAME__/`)
               traefik.http.routers.homehub-__NAME__-public.priority: "200"
-              traefik.http.routers.homehub-__NAME__-public.middlewares: homehub-forward-auth@file,homehub-__NAME__-strip,homehub-security-headers@file,homehub-compress@file
+              traefik.http.routers.homehub-__NAME__-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-__NAME__-strip,homehub-security-headers@file,homehub-compress@file
               traefik.http.routers.homehub-__NAME__-public.tls: "true"
               traefik.http.middlewares.homehub-__NAME__-strip.stripprefix.prefixes: /__NAME__
               traefik.http.services.homehub-__NAME__.loadbalancer.server.port: "8080"

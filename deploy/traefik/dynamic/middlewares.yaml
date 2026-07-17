@@ -30,6 +30,18 @@ http:
           - X-HomeHub-Beszel-Email
           - X-HomeHub-Scopes
           - X-HomeHub-Identity
+          - X-HomeHub-AI-Identity
+
+    homehub-strip-untrusted-identity:
+      headers:
+        customRequestHeaders:
+          X-HomeHub-Principal-ID: ""
+          X-HomeHub-Principal: ""
+          X-HomeHub-Email: ""
+          X-HomeHub-Beszel-Email: ""
+          X-HomeHub-Scopes: ""
+          X-HomeHub-Identity: ""
+          X-HomeHub-AI-Identity: ""
 
     homehub-strip-server:
       stripPrefix:

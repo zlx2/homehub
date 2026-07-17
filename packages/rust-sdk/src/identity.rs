@@ -26,6 +26,10 @@ pub struct Claims {
     pub name: String,
     #[serde(default)]
     pub scopes: Vec<String>,
+    #[serde(rename = "azp", default)]
+    pub authorized_party: String,
+    #[serde(default)]
+    pub models: Vec<String>,
     #[serde(rename = "iat")]
     pub issued_at: i64,
     #[serde(rename = "exp")]
@@ -166,6 +170,8 @@ mod tests {
             subject: "owner-1".to_owned(),
             name: "Luna".to_owned(),
             scopes: vec!["admin".to_owned(), "portal.view".to_owned()],
+            authorized_party: String::new(),
+            models: Vec::new(),
             issued_at: NOW,
             expires: NOW + 60,
         }

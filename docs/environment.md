@@ -14,7 +14,7 @@
 - Docker Compose: 5.1.3
 - Repository path: `/home/ubuntu/homehub`
 - Persistent data root: `/srv/homehub`
-- Git remote: none
+- Git remote: `git@gitee.com:zlx23/homehub.git` (private)
 
 ## Existing published or bound TCP ports
 

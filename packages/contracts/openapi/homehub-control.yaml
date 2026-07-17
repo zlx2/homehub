@@ -49,7 +49,7 @@ paths:
       operationId: checkAuthentication
       security: [{ ownerSession: [] }]
       responses:
-        "204": { description: Valid session; identity headers are returned for forward-auth. }
+        "204": { description: Valid session; service identity and optional AI delegation headers are returned for forward-auth. }
         "401": { description: Authentication is required. }
   /api/v1/setup/begin:
     post:

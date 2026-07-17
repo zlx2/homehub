@@ -31,15 +31,25 @@
       "health_url": "http://beszel:8090/api/health"
     },
     {
-	  "id": "drop",
-	  "name": "Drop",
-	  "description": "临时发送文字与文件；本人可管理，分享访客可直接使用。",
-	  "icon": "↓",
-	  "route": "/drop/",
+      "id": "ai-gateway",
+      "name": "AI Gateway",
+      "description": "内部统一模型路由、流式转发与提供商密钥隔离。",
+      "icon": "A",
+      "route": "",
+      "visibility": "internal",
+      "share_enabled": false,
+      "health_url": "http://ai-gateway:8080/health/ready"
+    },
+    {
+      "id": "drop",
+      "name": "Drop",
+      "description": "临时发送文字与文件；本人可管理，分享访客可直接使用。",
+      "icon": "↓",
+      "route": "/drop/",
       "visibility": "shared",
       "share_enabled": true,
-	  "identity_enabled": true,
-	  "health_url": "http://drop:8080/health/ready"
+      "identity_enabled": true,
+      "health_url": "http://drop:8080/health/ready"
     }
   ]
 }

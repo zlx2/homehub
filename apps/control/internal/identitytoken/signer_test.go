@@ -73,3 +73,45 @@ func TestNewFromFileRejectsShortKey(t *testing.T) {
 		t.Fatal("expected short key to be rejected")
 	}
 }
+
+func TestIssueAIBindsSourceServiceAndModels(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(path, []byte(strings.Repeat("a", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewFromFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer.now = func() time.Time { return time.Date(2026, 7, 17, 13, 0, 0, 0, time.UTC) }
+	token, err := signer.IssueAI("guest-1", "Guest", "assistant", []string{"portal.view"}, []string{"fast", "coding"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(token, ".")
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got claims
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Audience != "ai-gateway" || got.AuthorizedParty != "assistant" {
+		t.Fatalf("unexpected delegation: %+v", got)
+	}
+	if strings.Join(got.Models, ",") != "fast,coding" || !contains(got.Scopes, "ai.use") || !contains(got.Scopes, "portal.view") {
+		t.Fatalf("unexpected delegation policy: %+v", got)
+	}
+}
+
+func TestIssueAIRejectsEmptyPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(path, []byte(strings.Repeat("a", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	signer, _ := NewFromFile(path)
+	if _, err := signer.IssueAI("owner", "Owner", "notes", []string{"admin"}, nil); err == nil {
+		t.Fatal("expected empty model policy to be rejected")
+	}
+}

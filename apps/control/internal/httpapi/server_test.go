@@ -65,9 +65,40 @@ func TestAuthCheckIssuesIdentityForOptedInService(t *testing.T) {
 	}
 }
 
+func TestAuthCheckIssuesSeparateAIDelegation(t *testing.T) {
+	issuer := &recordingIdentityIssuer{token: "service-token", aiToken: "ai-token"}
+	api := &server{identityIssuer: issuer}
+	response := httptest.NewRecorder()
+	principal := auth.Principal{ID: "guest-1", DisplayName: "Guest", Scopes: []string{"portal.view"}}
+	service := catalog.Service{
+		ID: "assistant", IdentityEnabled: true, AIEnabled: true, AIModels: []string{"fast", "coding"},
+	}
+	if err := api.setServiceIdentity(response, principal, service); err != nil {
+		t.Fatal(err)
+	}
+	if err := api.setAIIdentity(response, principal, service); err != nil {
+		t.Fatal(err)
+	}
+	if response.Header().Get("X-HomeHub-Identity") != "service-token" || response.Header().Get("X-HomeHub-AI-Identity") != "ai-token" {
+		t.Fatalf("headers=%v", response.Header())
+	}
+	if issuer.sourceService != "assistant" || strings.Join(issuer.models, ",") != "fast,coding" {
+		t.Fatalf("source=%q models=%v", issuer.sourceService, issuer.models)
+	}
+}
+
 type recordingIdentityIssuer struct {
-	token    string
-	audience string
+	token         string
+	aiToken       string
+	audience      string
+	sourceService string
+	models        []string
+}
+
+func (issuer *recordingIdentityIssuer) IssueAI(_, _, sourceService string, _ []string, models []string) (string, error) {
+	issuer.sourceService = sourceService
+	issuer.models = append([]string(nil), models...)
+	return issuer.aiToken, nil
 }
 
 func (issuer *recordingIdentityIssuer) Issue(_, _ string, _ []string, audience string) (string, error) {

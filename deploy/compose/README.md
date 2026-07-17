@@ -52,6 +52,11 @@ file. It creates separate copies where Control, PostgreSQL, and Drop require
 different Unix ownership. Do not place the BWS access token in `.env`, shell
 history, Compose configuration, or Git.
 
+AI Gateway additionally requires `ai_deepseek_api_key` and
+`ai_opencode_go_api_key` in the same Bitwarden project. These values are mounted
+only into the internal AI Gateway container; business services receive signed,
+short-lived model permissions instead.
+
 The Beszel bootstrap creates its first local user and SSH identity without
 persisting the generated bootstrap password. Normal access is then delegated to
 HomeHub Control by the trusted `X-HomeHub-Email` header. The agent listens on a

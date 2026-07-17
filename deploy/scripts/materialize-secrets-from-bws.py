@@ -27,6 +27,8 @@ TARGETS = {
     "auth_encryption_key": [("auth_encryption_key", 65532, 65532)],
     "owner_setup_token": [("owner_setup_token", 65532, 65532)],
     "beszel_agent_key": [("beszel_agent_key", 65532, 65532)],
+    "ai_deepseek_api_key": [("ai_deepseek_api_key", 65532, 65532)],
+    "ai_opencode_go_api_key": [("ai_opencode_go_api_key", 65532, 65532)],
 }
 
 IDENTITY_SECRET_KEY = "drop_identity_key"
@@ -105,7 +107,7 @@ def main() -> None:
             values[key] = value
     missing = sorted(required - set(values))
     if missing:
-        fail("required secret keys are missing")
+        fail("required secret keys are missing: " + ", ".join(missing))
 
     SECRETS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(SECRETS_DIR, 0o700)

@@ -272,7 +272,7 @@ services:
       traefik.http.routers.homehub-drop-public.entrypoints: public-https
       traefik.http.routers.homehub-drop-public.rule: Path(`/drop`) || PathPrefix(`/drop/`)
       traefik.http.routers.homehub-drop-public.priority: "200"
-      traefik.http.routers.homehub-drop-public.middlewares: homehub-forward-auth@file,homehub-strip-drop@file,homehub-security-headers@file
+      traefik.http.routers.homehub-drop-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-strip-drop@file,homehub-security-headers@file
       traefik.http.routers.homehub-drop-public.tls: "true"
       traefik.http.services.homehub-drop.loadbalancer.server.port: "8080"
       homehub.id: drop
@@ -324,7 +324,7 @@ services:
       traefik.http.routers.homehub-beszel-public.entrypoints: public-https
       traefik.http.routers.homehub-beszel-public.rule: Path(`/server`) || PathPrefix(`/server/`)
       traefik.http.routers.homehub-beszel-public.priority: "200"
-      traefik.http.routers.homehub-beszel-public.middlewares: homehub-forward-auth@file,homehub-strip-server@file,homehub-beszel-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-beszel-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-strip-server@file,homehub-beszel-security-headers@file,homehub-compress@file
       traefik.http.routers.homehub-beszel-public.tls: "true"
       traefik.http.services.homehub-beszel.loadbalancer.server.port: "8090"
       homehub.id: server-monitor
@@ -366,6 +366,46 @@ services:
       - ALL
     healthcheck:
       test: ["CMD", "/agent", "health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  ai-gateway:
+    image: homehub/ai-gateway:local
+    build:
+      context: ../..
+      dockerfile: services/ai-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      AI_GATEWAY_LISTEN_ADDRESS: 0.0.0.0:8080
+      AI_GATEWAY_CONFIG_FILE: /etc/homehub-ai/providers.json
+      AI_GATEWAY_IDENTITY_PUBLIC_KEY_FILE: /run/secrets/identity_public_key
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,ai-gateway
+      no_proxy: localhost,127.0.0.1,ai-gateway
+    networks:
+      - backend
+      - egress
+    volumes:
+      - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
+    secrets:
+      - source: identity_public_key
+        target: identity_public_key
+      - ai_deepseek_api_key
+      - ai_opencode_go_api_key
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/ai-gateway", "healthcheck"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -459,6 +499,8 @@ networks:
   management:
     name: homehub-management
     internal: true
+  egress:
+    name: homehub-egress
 
 secrets:
   postgres_superuser_password:
@@ -477,3 +519,7 @@ secrets:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/identity_public_key
   beszel_agent_key:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/beszel_agent_key
+  ai_deepseek_api_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/ai_deepseek_api_key
+  ai_opencode_go_api_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/ai_opencode_go_api_key

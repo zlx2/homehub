@@ -10,17 +10,20 @@ import (
 )
 
 var serviceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
+var modelAliasPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 
 type Service struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description"`
-	Icon            string `json:"icon"`
-	Route           string `json:"route"`
-	Visibility      string `json:"visibility"`
-	ShareEnabled    bool   `json:"share_enabled"`
-	IdentityEnabled bool   `json:"identity_enabled"`
-	HealthURL       string `json:"health_url"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	Icon            string   `json:"icon"`
+	Route           string   `json:"route"`
+	Visibility      string   `json:"visibility"`
+	ShareEnabled    bool     `json:"share_enabled"`
+	IdentityEnabled bool     `json:"identity_enabled"`
+	AIEnabled       bool     `json:"ai_enabled"`
+	AIModels        []string `json:"ai_models"`
+	HealthURL       string   `json:"health_url"`
 }
 
 type fileFormat struct {
@@ -68,6 +71,25 @@ func validate(service Service) error {
 	case "owner", "shared", "internal":
 	default:
 		return fmt.Errorf("invalid visibility %q", service.Visibility)
+	}
+	if service.AIEnabled && !service.IdentityEnabled {
+		return fmt.Errorf("ai_enabled requires identity_enabled")
+	}
+	if service.AIEnabled && len(service.AIModels) == 0 {
+		return fmt.Errorf("ai_enabled requires at least one ai_models entry")
+	}
+	if !service.AIEnabled && len(service.AIModels) != 0 {
+		return fmt.Errorf("ai_models requires ai_enabled")
+	}
+	seenModels := make(map[string]struct{}, len(service.AIModels))
+	for _, model := range service.AIModels {
+		if !modelAliasPattern.MatchString(model) {
+			return fmt.Errorf("invalid AI model alias %q", model)
+		}
+		if _, exists := seenModels[model]; exists {
+			return fmt.Errorf("duplicate AI model alias %q", model)
+		}
+		seenModels[model] = struct{}{}
 	}
 	healthURL, err := url.Parse(service.HealthURL)
 	if err != nil || healthURL.Host == "" || (healthURL.Scheme != "http" && healthURL.Scheme != "https") {

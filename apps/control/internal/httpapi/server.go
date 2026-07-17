@@ -25,6 +25,7 @@ type StatusProvider interface {
 
 type IdentityIssuer interface {
 	Issue(subject, name string, scopes []string, audience string) (string, error)
+	IssueAI(subject, name, sourceService string, scopes, models []string) (string, error)
 }
 
 type Options struct {
@@ -170,7 +171,29 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
 		return
 	}
+	if err := api.setAIIdentity(writer, principal, service); err != nil {
+		api.logger.Error("issue AI delegation", "service_id", service.ID, "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
+	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) setAIIdentity(writer http.ResponseWriter, principal auth.Principal, service catalog.Service) error {
+	if !service.AIEnabled {
+		return nil
+	}
+	if api.identityIssuer == nil {
+		return errors.New("AI identity issuer is not configured")
+	}
+	token, err := api.identityIssuer.IssueAI(
+		principal.ID, principal.DisplayName, service.ID, principal.Scopes, service.AIModels,
+	)
+	if err != nil {
+		return err
+	}
+	writer.Header().Set("X-HomeHub-AI-Identity", token)
+	return nil
 }
 
 func (api *server) setServiceIdentity(writer http.ResponseWriter, principal auth.Principal, service catalog.Service) error {
