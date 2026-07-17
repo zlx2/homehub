@@ -391,12 +391,20 @@ button {
     display: flex;
   }
 
+  .terminal-app.composing .keybar {
+    display: none;
+  }
+
   .mobile-composer {
     display: flex;
   }
 
   .toast {
     bottom: calc(116px + var(--bottom-safe-area));
+  }
+
+  .terminal-app.composing .toast {
+    bottom: 64px;
   }
 }
 

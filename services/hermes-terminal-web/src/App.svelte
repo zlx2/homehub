@@ -12,7 +12,11 @@
   let lastViewportHeight = 0;
   let composerElement: HTMLTextAreaElement;
   let mobileMode = false;
+  let composerFocused = false;
   let draft = '';
+
+  const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${location.host}/hermes/ws`;
@@ -62,6 +66,7 @@
     send('\x15');
     window.setTimeout(() => send(value), 50);
     window.setTimeout(() => send('\r'), 100);
+    if (mobileMode) requestAnimationFrame(() => composerElement?.focus());
   }
 
   function handleComposerKeydown(event: KeyboardEvent) {
@@ -73,6 +78,16 @@
   function focusInput() {
     if (mobileMode) composerElement?.focus();
     else client?.focus();
+  }
+
+  function handleComposerFocus() {
+    composerFocused = true;
+    updateViewport();
+  }
+
+  function handleComposerBlur() {
+    composerFocused = false;
+    updateViewport();
   }
 
   async function pasteClipboard() {
@@ -114,9 +129,17 @@
   function updateViewport() {
     mobileMode = matchMedia('(max-width: 720px), (pointer: coarse)').matches;
     const viewport = window.visualViewport;
-    const height = Math.round(viewport?.height || window.innerHeight);
+    const visualHeight = Math.round(viewport?.height || window.innerHeight);
+    const layoutHeight = Math.round(window.innerHeight);
+    const viewportGap = layoutHeight - visualHeight;
+    // Safari 26 can resize the layout viewport for the keyboard and then
+    // subtract its form-assistant row once more from VisualViewport. In that
+    // narrow-gap case the layout height is the actual top of the assistant.
+    const height = isiOS && composerFocused && viewportGap > 0 && viewportGap < 120
+      ? layoutHeight
+      : visualHeight;
     const offsetTop = Math.round(viewport?.offsetTop || 0);
-    const keyboardOpen = window.innerHeight - height > 120;
+    const keyboardOpen = composerFocused || layoutHeight - visualHeight > 120;
 
     document.documentElement.style.setProperty('--app-offset-top', `${offsetTop}px`);
     document.documentElement.style.setProperty(
@@ -159,7 +182,7 @@
   <meta name="description" content="HomeHub Hermes native web terminal" />
 </svelte:head>
 
-<main class="terminal-app">
+<main class="terminal-app" class:composing={composerFocused}>
   <header class="topbar">
     <a class="icon-button home-button" href="/" aria-label="返回 HomeHub">‹</a>
     <div class="identity">
@@ -200,7 +223,8 @@
       maxlength="12000"
       placeholder="输入消息或命令…"
       rows="1"
-      onfocus={updateViewport}
+      onblur={handleComposerBlur}
+      onfocus={handleComposerFocus}
       onkeydown={handleComposerKeydown}
     ></textarea>
     <button type="submit" disabled={!draft.trim() || connection !== 'connected'}>发送</button>
