@@ -1,6 +1,6 @@
 http:
   middlewares:
-    hermes-security-headers:
+    homehub-security-headers:
       headers:
         contentTypeNosniff: true
         frameDeny: true
@@ -10,5 +10,5 @@ http:
         customResponseHeaders:
           Server: ""
 
-    hermes-compress:
+    homehub-compress:
       compress: {}

@@ -3,8 +3,8 @@
 ## Request path
 
 1. A client connects to Traefik over HTTPS.
-2. Traefik asks Hermes Control to authorize protected requests.
-3. Hermes Control validates the owner or guest session and requested scope.
+2. Traefik asks HomeHub Control to authorize protected requests.
+3. HomeHub Control validates the owner or guest session and requested scope.
 4. Traefik removes untrusted identity headers and forwards trusted short-lived identity context.
 5. The destination service validates issuer, audience, expiry, and scopes.
 6. The service reads and writes only its own database and file volumes.
@@ -13,7 +13,7 @@
 
 - Compose and labels: deployment, networking, route declarations, catalog defaults.
 - Bitwarden Secrets Manager: credentials, signing keys, provider API keys.
-- Hermes Control database: sessions, grants, scopes, runtime policy overrides.
+- HomeHub Control database: sessions, grants, scopes, runtime policy overrides.
 - Service database: service-owned business data.
 
 ## Network intent

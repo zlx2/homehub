@@ -28,7 +28,7 @@ providers:
   docker:
     endpoint: tcp://docker-socket-proxy:2375
     exposedByDefault: false
-    network: hermes-edge
+    network: homehub-edge
     watch: true
   file:
     directory: /etc/traefik/dynamic

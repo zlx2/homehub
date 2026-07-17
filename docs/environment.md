@@ -12,8 +12,8 @@
 - Git: 2.34.1
 - Docker Engine: 29.4.3
 - Docker Compose: 5.1.3
-- Repository path: `/home/ubuntu/hermes-platform`
-- Persistent data root: `/srv/hermes-platform`
+- Repository path: `/home/ubuntu/homehub`
+- Persistent data root: `/srv/homehub`
 - Git remote: none
 
 ## Existing published or bound TCP ports
@@ -25,7 +25,7 @@
 - 8098: Kobold Lite on Tailscale IPv4
 - 19877: RoleChat on localhost and Tailscale
 - 8080-8082: Drop on localhost
-- 8642: Hermes on localhost
+- 8642: existing Hermes Agent gateway on localhost
 - 9090: Mihomo admin on localhost
 - 1080-1081: Mihomo proxies on localhost
 - 39174 and 65092: existing Tailscale-bound listeners

@@ -1,4 +1,4 @@
-name: hermes-platform
+name: homehub
 
 services:
   docker-socket-proxy:
@@ -97,7 +97,7 @@ services:
     networks:
       - data
     volumes:
-      - ${HERMES_DATA_ROOT:-/srv/hermes-platform}/postgres:/var/lib/postgresql
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/postgres:/var/lib/postgresql
     secrets:
       - postgres_superuser_password
     security_opt:
@@ -111,17 +111,17 @@ services:
 
 networks:
   edge:
-    name: hermes-edge
+    name: homehub-edge
   backend:
-    name: hermes-backend
+    name: homehub-backend
     internal: true
   data:
-    name: hermes-data
+    name: homehub-data
     internal: true
   docker-api:
-    name: hermes-docker-api
+    name: homehub-docker-api
     internal: true
 
 secrets:
   postgres_superuser_password:
-    file: ${HERMES_SECRETS_DIR:-/srv/hermes-platform/runtime/secrets}/postgres_superuser_password
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/postgres_superuser_password

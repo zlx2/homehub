@@ -1,4 +1,4 @@
-# Hermes Platform Agent Instructions
+# HomeHub Agent Instructions
 
 ## Architecture
 
@@ -14,7 +14,7 @@
 
 ## Languages and protocols
 
-- Use Go 1.26.5 for Hermes Control and infrastructure-oriented services.
+- Use Go 1.26.5 for HomeHub Control and infrastructure-oriented services.
 - Use Rust stable 1.97 with Edition 2024 for suitable business microservices.
 - Use Svelte and TypeScript for the portal.
 - Start with REST and JSON for service APIs.
@@ -26,7 +26,7 @@
 - Deny access by default.
 - Public HTTP traffic enters through Traefik.
 - Services must not trust identity headers supplied by clients.
-- Hermes Control performs authentication and authorization.
+- HomeHub Control performs authentication and authorization.
 - Internal identity tokens must validate signature, issuer, audience, expiry, and scopes.
 - Databases must not be exposed publicly unless explicitly documented.
 - Existing public MySQL port 42061 and Redis port 38291 must remain available and will be hardened separately.
@@ -41,3 +41,6 @@
 - Do not introduce Kubernetes, Nacos, a service mesh, or a message broker without an ADR.
 - Do not modify, stop, or recreate existing server containers without explicit approval.
 - Do not bind new development services to port 443 until the edge migration is approved.
+- The existing Nous Research Hermes Agent under `~/.hermes` is a separate system.
+- Do not read, modify, stop, or depend on Hermes Agent as part of HomeHub development.
+- Any future Hermes Agent integration requires a separate ADR and a least-privilege service identity.

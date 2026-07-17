@@ -1,21 +1,21 @@
 # Network model
 
-## `hermes-edge`
+## `homehub-edge`
 
 Traefik and HTTP services explicitly published through Traefik join this network.
 A container is not routed unless `traefik.enable=true` is present.
 
-## `hermes-backend`
+## `homehub-backend`
 
 Internal service APIs use this network. It is marked internal and has no direct
 route outside Docker. Services address each other by Compose service name.
 
-## `hermes-data`
+## `homehub-data`
 
 PostgreSQL and authorized database clients use this internal network. PostgreSQL
 does not publish a host port.
 
-## `hermes-docker-api`
+## `homehub-docker-api`
 
 Only Traefik and the Docker socket proxy join this internal network. The proxy
 permits the read-only API groups needed for container discovery and Docker event

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-admin_url=${HERMES_TRAEFIK_ADMIN_URL:-http://127.0.0.1:18081}
+admin_url=${HOMEHUB_TRAEFIK_ADMIN_URL:-http://127.0.0.1:18081}
 
 ping_response=$(curl --fail --silent --show-error "$admin_url/ping")
 if [ "$ping_response" != "OK" ]; then

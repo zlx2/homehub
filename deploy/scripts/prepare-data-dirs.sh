@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-data_root=${HERMES_DATA_ROOT:-/srv/hermes-platform}
+data_root=${HOMEHUB_DATA_ROOT:-/srv/homehub}
 
 install -d -m 0750 "$data_root"
 install -d -o 999 -g 999 -m 0700 "$data_root/postgres"

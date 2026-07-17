@@ -19,7 +19,7 @@ make edge-check
 ```
 
 Do not place secret values in `.env`. Runtime secret files are materialized under
-`/srv/hermes-platform/runtime/secrets` by the deployment process and are not
+`/srv/homehub/runtime/secrets` by the deployment process and are not
 tracked by Git.
 
 Before PostgreSQL is started for the first time, run the data directory helper

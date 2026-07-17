@@ -5,7 +5,7 @@
 
 ## Context
 
-Hermes is a personal platform hosted on one public Ubuntu server. The owner is
+HomeHub is a personal platform hosted on one public Ubuntu server. The owner is
 the primary user, with occasional scoped access granted to guests. Services
 must be easy to add without reimplementing authentication, authorization,
 routing, AI provider integration, or operational conventions.
@@ -13,7 +13,7 @@ routing, AI provider integration, or operational conventions.
 ## Decision
 
 - Use Traefik as the edge data plane.
-- Build Hermes Control in Go as the authentication, authorization, sharing,
+- Build HomeHub Control in Go as the authentication, authorization, sharing,
   catalog, and policy control plane.
 - Use Docker Compose DNS and labels instead of a separate registry such as Nacos.
 - Use one physical PostgreSQL instance with a separate database and role owned

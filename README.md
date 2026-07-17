@@ -1,4 +1,4 @@
-# Hermes Platform
+# HomeHub
 
 Personal service platform for a single public server. The platform provides a
 shared edge gateway, authentication, authorization, service catalog, sharing
@@ -19,7 +19,7 @@ No production service is defined in this initial scaffold.
 
 ## Repository layout
 
-- `apps/control`: Hermes Control API
+- `apps/control`: HomeHub Control API
 - `apps/portal`: owner portal
 - `services`: independently deployable business services
 - `packages`: shared contracts and small language-specific SDKs
@@ -31,4 +31,4 @@ No production service is defined in this initial scaffold.
 
 This repository must never contain production secrets, database contents,
 private keys, or runtime data. Persistent data lives under
-`/srv/hermes-platform` on the server.
+`/srv/homehub` on the server.
