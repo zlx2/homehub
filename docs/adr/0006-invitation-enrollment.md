@@ -1,6 +1,6 @@
 # ADR 0006: Enroll friends through one-time invitations
 
-- Status: Accepted
+- Status: Superseded by ADR 0007
 - Date: 2026-07-17
 
 ## Context

@@ -32,10 +32,11 @@ service; other principals only see and reach services explicitly marked as
 shareable and covered by an active, unexpired grant. Runtime grants live in the
 Control database and grant changes are CSRF-protected and audited.
 
-Friend accounts use closed registration. An administrator creates a one-time,
-expiring invitation containing the initial service selection; the friend chooses
-a password and binds TOTP before the account, grants, and first session are
-created atomically. Plaintext invitation tokens are never stored.
+Friend access uses expiring capability links. An administrator selects one or
+more shareable services and sends the generated URL; opening it creates a
+restricted guest session without registration, a password, or TOTP. Revoking a
+link immediately revokes its active guest sessions and grants. Plaintext link
+tokens are never stored.
 
 ## Development verification
 

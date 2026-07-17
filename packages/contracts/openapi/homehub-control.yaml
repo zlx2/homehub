@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HomeHub Control API
-  version: 0.4.0
+  version: 0.5.0
   description: Authentication, service authorization, and service-directory contract for HomeHub.
 servers:
   - url: https://111.229.205.99
@@ -76,32 +76,18 @@ paths:
       responses:
         "201": { description: Owner activated and session created. }
         "401": { description: TOTP code was invalid. }
-  /api/v1/invitations/begin:
+  /api/v1/invitations/redeem:
     post:
-      operationId: beginInvitationEnrollment
+      operationId: redeemShareLink
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/BeginInvitationEnrollmentRequest"
+              $ref: "#/components/schemas/RedeemShareLinkRequest"
       responses:
-        "201": { description: Pending friend enrollment with TOTP provisioning data. }
-        "401": { description: Invitation is invalid or expired. }
-        "409": { description: Invitation is already claimed or username is unavailable. }
-  /api/v1/invitations/confirm:
-    post:
-      operationId: confirmInvitationEnrollment
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ConfirmSetupRequest"
-      responses:
-        "201": { description: Friend account and session created. }
-        "401": { description: TOTP code was invalid. }
-        "409": { description: Invitation or username is no longer available. }
+        "201": { description: Restricted guest session created directly from the share link. }
+        "401": { description: Share link is invalid, expired, or revoked. }
   /api/v1/system:
     get:
       operationId: getSystem
@@ -254,14 +240,12 @@ components:
         expires_at:
           type: [string, "null"]
           format: date-time
-    BeginInvitationEnrollmentRequest:
+    RedeemShareLinkRequest:
       type: object
       additionalProperties: false
-      required: [token, username, password]
+      required: [token]
       properties:
         token: { type: string, minLength: 32 }
-        username: { type: string, pattern: "^[a-zA-Z0-9_.-]{3,64}$" }
-        password: { type: string, minLength: 12, maxLength: 256 }
     CreateInvitationRequest:
       type: object
       additionalProperties: false
@@ -269,6 +253,7 @@ components:
       properties:
         service_ids:
           type: array
+          minItems: 1
           uniqueItems: true
           items: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$" }
         expires_at:

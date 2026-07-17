@@ -574,6 +574,10 @@ func (s *Service) RevokeServiceGrant(ctx context.Context, actor, grantID, remote
 }
 
 func createSessionTx(ctx context.Context, tx pgx.Tx, principal Principal, remoteIP, userAgent string) (Session, error) {
+	return createSessionUntilTx(ctx, tx, principal, remoteIP, userAgent, time.Now().UTC().Add(sessionTTL))
+}
+
+func createSessionUntilTx(ctx context.Context, tx pgx.Tx, principal Principal, remoteIP, userAgent string, absoluteExpiry time.Time) (Session, error) {
 	token, err := randomToken(32)
 	if err != nil {
 		return Session{}, err
@@ -584,9 +588,24 @@ func createSessionTx(ctx context.Context, tx pgx.Tx, principal Principal, remote
 	}
 	tokenDigest, csrfDigest := tokenHash(token), tokenHash(csrf)
 	userAgentHash := sha256.Sum256([]byte(userAgent))
+	idleExpiry, absoluteExpiry, err := sessionDeadlines(time.Now().UTC(), absoluteExpiry)
+	if err != nil {
+		return Session{}, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO sessions(principal_id,token_hash,csrf_hash,idle_expires_at,absolute_expires_at,remote_ip,user_agent_hash)
-		VALUES($1,$2,$3,now()+interval '12 hours',now()+interval '7 days',$4,$5)`, principal.ID, tokenDigest[:], csrfDigest[:], nullableIP(remoteIP), userAgentHash[:])
+		VALUES($1,$2,$3,$4,$5,$6,$7)`, principal.ID, tokenDigest[:], csrfDigest[:], idleExpiry, absoluteExpiry, nullableIP(remoteIP), userAgentHash[:])
 	return Session{Principal: principal, Token: token, CSRF: csrf}, err
+}
+
+func sessionDeadlines(now, absoluteExpiry time.Time) (time.Time, time.Time, error) {
+	if !absoluteExpiry.After(now) {
+		return time.Time{}, time.Time{}, fmt.Errorf("session expiry must be in the future")
+	}
+	idleExpiry := now.Add(sessionIdleTTL)
+	if idleExpiry.After(absoluteExpiry) {
+		idleExpiry = absoluteExpiry
+	}
+	return idleExpiry, absoluteExpiry, nil
 }
 
 func (s *Service) encrypt(plaintext []byte) ([]byte, []byte, error) {

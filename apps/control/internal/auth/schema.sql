@@ -99,8 +99,12 @@ CREATE TABLE IF NOT EXISTS invitations (
     created_at timestamptz NOT NULL DEFAULT now(),
     CHECK (expires_at > created_at)
 );
+ALTER TABLE invitations
+    ADD COLUMN IF NOT EXISTS guest_principal_id uuid REFERENCES principals(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS invitations_active_idx
     ON invitations(expires_at) WHERE consumed_at IS NULL AND revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS invitations_share_active_idx
+    ON invitations(expires_at) WHERE revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS invitation_services (
     invitation_id uuid NOT NULL REFERENCES invitations(id) ON DELETE CASCADE,
@@ -109,21 +113,9 @@ CREATE TABLE IF NOT EXISTS invitation_services (
     CHECK (service_id ~ '^[a-z][a-z0-9-]{1,62}$')
 );
 
-CREATE TABLE IF NOT EXISTS invitation_attempts (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    invitation_id uuid NOT NULL UNIQUE REFERENCES invitations(id) ON DELETE CASCADE,
-    username text NOT NULL,
-    password_hash text NOT NULL,
-    totp_secret_cipher bytea NOT NULL,
-    totp_secret_nonce bytea NOT NULL,
-    expires_at timestamptz NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-ALTER TABLE invitation_attempts
-    ADD COLUMN IF NOT EXISTS failed_attempts integer NOT NULL DEFAULT 0
-    CHECK (failed_attempts BETWEEN 0 AND 5);
-CREATE INDEX IF NOT EXISTS invitation_attempts_expiry_idx ON invitation_attempts(expires_at);
+DROP TABLE IF EXISTS invitation_attempts;
 
 INSERT INTO homehub_schema_migrations(version) VALUES (1) ON CONFLICT DO NOTHING;
 INSERT INTO homehub_schema_migrations(version) VALUES (2) ON CONFLICT DO NOTHING;
 INSERT INTO homehub_schema_migrations(version) VALUES (3) ON CONFLICT DO NOTHING;
+INSERT INTO homehub_schema_migrations(version) VALUES (4) ON CONFLICT DO NOTHING;

@@ -76,8 +76,7 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/logout", api.logout)
 	mux.HandleFunc("POST /api/v1/setup/begin", api.beginSetup)
 	mux.HandleFunc("POST /api/v1/setup/confirm", api.confirmSetup)
-	mux.HandleFunc("POST /api/v1/invitations/begin", api.beginInvitationEnrollment)
-	mux.HandleFunc("POST /api/v1/invitations/confirm", api.confirmInvitationEnrollment)
+	mux.HandleFunc("POST /api/v1/invitations/redeem", api.redeemInvitation)
 	mux.Handle("GET /api/v1/system", api.requireAuth(http.HandlerFunc(api.system)))
 	mux.Handle("GET /api/v1/services", api.requireAuth(http.HandlerFunc(api.listServices)))
 	mux.Handle("GET /api/v1/services/{id}", api.requireAuth(http.HandlerFunc(api.getService)))
@@ -247,64 +246,25 @@ func (api *server) confirmSetup(writer http.ResponseWriter, request *http.Reques
 	writeJSON(writer, http.StatusCreated, map[string]any{"authenticated": true, "principal": session.Principal})
 }
 
-func (api *server) beginInvitationEnrollment(writer http.ResponseWriter, request *http.Request) {
+func (api *server) redeemInvitation(writer http.ResponseWriter, request *http.Request) {
 	if !api.validOrigin(request) {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
 		return
 	}
 	var input struct {
-		Token    string `json:"token"`
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Token string `json:"token"`
 	}
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
-	setup, err := api.auth.BeginInvitationEnrollment(request.Context(), input.Token, input.Username, input.Password, remoteIP(request))
+	session, err := api.auth.RedeemInvitation(request.Context(), input.Token, remoteIP(request), request.UserAgent())
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrInvalidInvitation):
+		if errors.Is(err, auth.ErrInvalidInvitation) {
 			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_invitation"})
-		case errors.Is(err, auth.ErrInvitationClaimed):
-			writeJSON(writer, http.StatusConflict, map[string]string{"error": "invitation_already_claimed"})
-		case errors.Is(err, auth.ErrUsernameUnavailable):
-			writeJSON(writer, http.StatusConflict, map[string]string{"error": "username_unavailable"})
-		case strings.Contains(err.Error(), "must"):
-			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "invalid_input", "message": err.Error()})
-		default:
-			api.logger.Error("begin invitation enrollment", "error", err)
-			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+			return
 		}
-		return
-	}
-	writeJSON(writer, http.StatusCreated, setup)
-}
-
-func (api *server) confirmInvitationEnrollment(writer http.ResponseWriter, request *http.Request) {
-	if !api.validOrigin(request) {
-		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
-		return
-	}
-	var input struct {
-		SetupID  string `json:"setup_id"`
-		TOTPCode string `json:"totp_code"`
-	}
-	if !decodeJSON(writer, request, &input) {
-		return
-	}
-	session, err := api.auth.ConfirmInvitationEnrollment(request.Context(), input.SetupID, input.TOTPCode, remoteIP(request), request.UserAgent())
-	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrInvalidTOTP):
-			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "invalid_totp"})
-		case errors.Is(err, auth.ErrInvalidInvitation):
-			writeJSON(writer, http.StatusConflict, map[string]string{"error": "invitation_unavailable"})
-		case errors.Is(err, auth.ErrUsernameUnavailable):
-			writeJSON(writer, http.StatusConflict, map[string]string{"error": "username_unavailable"})
-		default:
-			api.logger.Error("confirm invitation enrollment", "error", err)
-			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
-		}
+		api.logger.Error("redeem share link", "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
 		return
 	}
 	api.setSessionCookies(writer, session)
@@ -658,6 +618,9 @@ func (api *server) deleteInvitation(writer http.ResponseWriter, request *http.Re
 }
 
 func (api *server) validateInvitationServices(input []string) ([]string, error) {
+	if len(input) == 0 {
+		return nil, fmt.Errorf("select at least one shareable service")
+	}
 	seen := make(map[string]struct{}, len(input))
 	serviceIDs := make([]string, 0, len(input))
 	for _, serviceID := range input {

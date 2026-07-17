@@ -98,6 +98,9 @@ func TestInvitationOnlyIncludesShareableServices(t *testing.T) {
 	if _, err := api.validateInvitationServices([]string{"chat", "chat"}); err == nil {
 		t.Fatal("expected duplicate service selection to fail")
 	}
+	if _, err := api.validateInvitationServices(nil); err == nil {
+		t.Fatal("expected empty service selection to fail")
+	}
 }
 
 func TestServicesDoNotExposeInternalHealthURL(t *testing.T) {

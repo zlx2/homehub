@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"testing"
+	"time"
 )
 
 func TestPasswordHashAndVerification(t *testing.T) {
@@ -46,6 +47,21 @@ func TestTOTPSecretEncryption(t *testing.T) {
 	}
 	if string(plaintext) != "totp-secret" {
 		t.Fatalf("decrypted value = %q", plaintext)
+	}
+}
+
+func TestSessionDeadlinesAreCappedByShareLink(t *testing.T) {
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	linkExpiry := now.Add(90 * time.Minute)
+	idle, absolute, err := sessionDeadlines(now, linkExpiry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !idle.Equal(linkExpiry) || !absolute.Equal(linkExpiry) {
+		t.Fatalf("deadlines = (%v, %v), want link expiry %v", idle, absolute, linkExpiry)
+	}
+	if _, _, err := sessionDeadlines(now, now); err == nil {
+		t.Fatal("expected expired share link to reject session creation")
 	}
 }
 

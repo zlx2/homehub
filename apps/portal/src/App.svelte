@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import AdminAccess from './AdminAccess.svelte';
-  import InviteEnrollment from './InviteEnrollment.svelte';
 
   type Health = { status: 'healthy' | 'unhealthy' | 'unknown'; checked_at?: string; latency_ms?: number };
   type Service = { id: string; name: string; description: string; icon: string; route?: string; visibility: 'owner' | 'shared' | 'internal'; share_enabled: boolean; health: Health };
@@ -25,7 +24,7 @@
   let totpCode = '';
   let setup: SetupResult | null = null;
   let submitting = false;
-  let inviteToken = '';
+  let shareError = '';
 
   async function api(path: string, init?: RequestInit) {
     const response = await fetch(path, { cache: 'no-store', ...init });
@@ -118,11 +117,31 @@
     }
   }
 
-  async function completeInvitation(enrolled: Principal) {
-    principal = enrolled;
-    inviteToken = '';
-    setupRequired = false;
-    await refresh();
+  async function initialize() {
+    const match = location.hash.match(/^#share=([A-Za-z0-9_-]{32,})$/);
+    if (!match) {
+      await loadSession();
+      return;
+    }
+    const token = match[1];
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+    authLoading = true;
+    try {
+      const result = await api('/api/v1/invitations/redeem', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
+      });
+      principal = result.principal;
+      setupRequired = false;
+      await refresh();
+      const destinations = services.filter((service) => service.route);
+      if (destinations.length === 1 && destinations[0].route) location.replace(destinations[0].route);
+    } catch (cause) {
+      const value = cause instanceof Error ? cause.message : '分享链接不可用';
+      shareError = value === 'invalid_invitation' ? '分享链接无效、已过期或已被撤销。' : authMessage(cause);
+      principal = null;
+    } finally {
+      authLoading = false;
+    }
   }
 
   function cookie(name: string) {
@@ -143,9 +162,7 @@
   function checkedAt(value?: string) { return value ? new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) : '尚未检查'; }
 
   onMount(() => {
-    const match = location.hash.match(/^#invite=([A-Za-z0-9_-]{32,})$/);
-    inviteToken = match?.[1] || '';
-    loadSession();
+    initialize();
     const timer = window.setInterval(() => { if (principal) refresh(); }, 5000);
     return () => window.clearInterval(timer);
   });
@@ -156,8 +173,8 @@
 {#if authLoading}
   <main class="auth-shell"><div class="auth-card loading-card"><div class="brand-mark">H</div><p>正在建立安全会话…</p></div></main>
 {:else if !principal}
-  {#if inviteToken}
-    <InviteEnrollment token={inviteToken} onComplete={completeInvitation} />
+  {#if shareError}
+    <main class="auth-shell"><section class="auth-card"><div class="auth-brand"><div class="brand-mark">H</div><div><p class="eyebrow">PRIVATE SHARE</p><h1>HomeHub</h1></div></div><div class="auth-copy"><p class="kicker">LINK UNAVAILABLE</p><h2>无法打开分享</h2><p>{shareError}</p></div></section></main>
   {:else}<main class="auth-shell">
     <section class="auth-card">
       <div class="auth-brand"><div class="brand-mark">H</div><div><p class="eyebrow">PERSONAL SERVICE FABRIC</p><h1>HomeHub</h1></div></div>
@@ -197,12 +214,12 @@
   <main class="shell">
     <header class="topbar">
       <div class="brand"><div class="brand-mark">H</div><div><p class="eyebrow">PERSONAL SERVICE FABRIC</p><h1>HomeHub</h1></div></div>
-      <div class="header-meta">{#if system}<span class="environment">{system.environment}</span><span>v{system.version}</span>{/if}<span>{principal.username}</span><button class="refresh" on:click={refresh}>刷新</button><button class="refresh" on:click={logout}>退出</button></div>
+      <div class="header-meta">{#if system}<span class="environment">{system.environment}</span><span>v{system.version}</span>{/if}<span>{principal.display_name}</span><button class="refresh" on:click={refresh}>刷新</button><button class="refresh" on:click={logout}>退出</button></div>
     </header>
     <section class="hero"><div><p class="kicker">CONTROL PLANE</p><h2>你的服务，保持清醒地运转。</h2><p class="hero-copy">统一入口管理服务状态与访问边界。目录会根据当前账号的有效授权自动过滤。</p></div>
       <div class="summary"><div><strong>{services.filter((s) => s.health.status === 'healthy').length}</strong><span>健康服务</span></div><div><strong>{services.length}</strong><span>已登记</span></div><div><strong>{services.filter((s) => s.share_enabled).length}</strong><span>允许分享</span></div></div>
     </section>
-    <aside class="notice secure"><span class="notice-dot"></span>{principal.scopes.includes('admin') ? '管理员' : '朋友'}会话已启用：密码 + TOTP，闲置 12 小时后过期。</aside>
+    <aside class="notice secure"><span class="notice-dot"></span>{principal.scopes.includes('admin') ? '管理员会话已启用：密码 + TOTP，闲置 12 小时后过期。' : '当前通过受限分享链接访问；权限会随链接到期或撤销。'}</aside>
     <section class="section-heading"><div><p class="kicker">SERVICE DIRECTORY</p><h2>服务目录</h2></div><p>{lastUpdated ? `更新于 ${lastUpdated.toLocaleTimeString('zh-CN')}` : '正在读取状态'}</p></section>
     {#if error}<div class="error-panel"><strong>状态读取失败</strong><span>{error}</span></div>{/if}
     {#if loading}<div class="service-grid"><div class="service-card skeleton"></div><div class="service-card skeleton"></div></div>
