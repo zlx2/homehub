@@ -1,0 +1,33 @@
+http:
+  routers:
+    homehub-hermes-public:
+      entryPoints:
+        - public-https
+      rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
+      priority: 200
+      middlewares:
+        - homehub-strip-untrusted-identity
+        - homehub-forward-auth
+        - homehub-hermes-security-headers
+      service: homehub-hermes
+      tls: {}
+
+  middlewares:
+    homehub-hermes-security-headers:
+      headers:
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: >-
+          camera=(), microphone=(), geolocation=(), payment=(), usb=()
+        stsSeconds: 31536000
+        stsIncludeSubdomains: false
+        stsPreload: false
+        customResponseHeaders:
+          Server: ""
+
+  services:
+    homehub-hermes:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: http://10.0.0.15:7681

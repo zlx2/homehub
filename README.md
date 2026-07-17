@@ -16,8 +16,9 @@ grants, and an AI gateway for independently deployable services.
 - Bitwarden Secrets Manager for production secrets
 
 The current stack includes PostgreSQL, HomeHub Control, the Svelte portal,
-Traefik, a Beszel server-monitoring module, and Drop as the first shareable
-business service. The owner portal is available at `https://111.229.205.99` with a trusted
+Traefik, a Beszel server-monitoring module, a native Hermes web terminal, and
+Drop as the first shareable business service. The owner portal is available at
+`https://111.229.205.99` with a trusted
 short-lived IP certificate. Owner authentication uses an Argon2id password,
 TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
 protection. Anonymous requests cannot read the service directory APIs.
@@ -25,6 +26,9 @@ The monitoring panel is mounted at `/server/`, reuses the HomeHub session throug
 ForwardAuth, maps an authenticated HomeHub administrator to its internal owner
 account, and is restricted to the `admin` scope. Its local agent has no TCP
 listener and reaches Docker only through a loopback-bound read-only socket proxy.
+The Hermes module is mounted at `/hermes/` and exposes the existing native
+`hermes --tui` through ttyd and a persistent tmux session. It is an owner-only
+host integration; Hermes data and configuration remain outside HomeHub.
 
 Service access is deny-by-default. Administrators can access every registered
 service; other principals only see and reach services explicitly marked as
@@ -78,6 +82,7 @@ make compose-config
 make dev-up
 make dev-check
 make public-check
+make hermes-terminal-check
 ```
 
 The development portal is bound to `127.0.0.1:18080`. Traefik's development

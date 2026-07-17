@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-ai-gateway format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-ai-gateway format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -80,6 +80,12 @@ beszel-bootstrap: ## Initialize Beszel data and its local agent identity
 
 beszel-check: ## Verify the protected server panel and local agent
 	@./deploy/scripts/check-running-beszel.sh
+
+hermes-terminal-install: ## Install or refresh the native Hermes web terminal
+	@./deploy/scripts/install-hermes-terminal.sh
+
+hermes-terminal-check: ## Verify the native terminal and protected public route
+	@./deploy/scripts/check-running-hermes-terminal.sh
 
 edge-down: ## Stop only this repository's development edge stack
 	@docker compose $(COMPOSE_ARGS) down

@@ -31,6 +31,16 @@
       "health_url": "http://beszel:8090/api/health"
     },
     {
+      "id": "hermes-terminal",
+      "name": "Hermes 终端",
+      "description": "在浏览器中使用原生 Hermes TUI，并持续保留终端会话。",
+      "icon": ">_",
+      "route": "/hermes/",
+      "visibility": "owner",
+      "share_enabled": false,
+      "health_url": "http://10.0.0.15:7681/hermes/"
+    },
+    {
       "id": "ai-gateway",
       "name": "AI Gateway",
       "description": "内部统一模型路由、流式转发与提供商密钥隔离。",

@@ -26,6 +26,7 @@
 - 19877: RoleChat on localhost and Tailscale
 - 8080-8082: Drop on localhost
 - 8642: existing Hermes Agent gateway on localhost
+- 7681: native Hermes ttyd listener on the private host address; routed only through `/hermes/`
 - 9090: Mihomo admin on localhost
 - 1080-1081: Mihomo proxies on localhost
 - 39174 and 65092: existing Tailscale-bound listeners
