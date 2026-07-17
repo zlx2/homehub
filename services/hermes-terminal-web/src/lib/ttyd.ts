@@ -54,6 +54,8 @@ export class TtydClient {
   private socket?: WebSocket;
   private resizeObserver?: ResizeObserver;
   private reconnectTimer?: number;
+  private resizeTimer?: number;
+  private pendingResize?: { columns: number; rows: number };
   private stopped = false;
   private fitFrame?: number;
   private written = 0;
@@ -93,7 +95,7 @@ export class TtydClient {
     }
 
     this.disposables.push(this.terminal.onData((data) => this.send(data)));
-    this.disposables.push(this.terminal.onResize(({ cols, rows }) => this.sendResize(cols, rows)));
+    this.disposables.push(this.terminal.onResize(({ cols, rows }) => this.queueResize(cols, rows)));
 
     this.resizeObserver = new ResizeObserver(() => this.scheduleFit());
     this.resizeObserver.observe(element);
@@ -145,6 +147,7 @@ export class TtydClient {
   dispose() {
     this.stopped = true;
     this.clearReconnect();
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
     if (this.fitFrame) cancelAnimationFrame(this.fitFrame);
     this.resizeObserver?.disconnect();
     this.socket?.close(1000);
@@ -160,7 +163,6 @@ export class TtydClient {
     payload[0] = INPUT.charCodeAt(0);
     payload.set(encoded, 1);
     socket.send(payload);
-    this.terminal.focus();
   }
 
   focus() {
@@ -214,6 +216,20 @@ export class TtydClient {
     const socket = this.socket;
     if (socket?.readyState !== WebSocket.OPEN) return;
     socket.send(this.encoder.encode(RESIZE + JSON.stringify({ columns, rows })));
+  }
+
+  private queueResize(columns: number, rows: number) {
+    this.pendingResize = { columns, rows };
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    // Mobile virtual keyboards animate the visual viewport through many
+    // intermediate heights. Sending every size to Hermes forces repeated
+    // full-screen TUI renders and competes with keystroke processing.
+    this.resizeTimer = window.setTimeout(() => {
+      this.resizeTimer = undefined;
+      const size = this.pendingResize;
+      this.pendingResize = undefined;
+      if (size) this.sendResize(size.columns, size.rows);
+    }, 100);
   }
 
   private sendControl(command: string) {

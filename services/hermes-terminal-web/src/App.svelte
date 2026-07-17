@@ -8,6 +8,8 @@
   let fontSize = 15;
   let notice = '';
   let noticeTimer: number | undefined;
+  let viewportTimer: number | undefined;
+  let lastViewportHeight = 0;
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${wsProtocol}//${location.host}/hermes/ws`;
@@ -76,9 +78,12 @@
   }
 
   function updateViewport() {
-    const height = window.visualViewport?.height || window.innerHeight;
+    const height = Math.round(window.visualViewport?.height || window.innerHeight);
+    if (height === lastViewportHeight) return;
+    lastViewportHeight = height;
     document.documentElement.style.setProperty('--app-height', `${height}px`);
-    setTimeout(() => client?.fit(), 30);
+    if (viewportTimer) clearTimeout(viewportTimer);
+    viewportTimer = window.setTimeout(() => client?.fit(), 100);
   }
 
   onMount(() => {
@@ -93,13 +98,12 @@
 
     window.addEventListener('resize', updateViewport);
     window.visualViewport?.addEventListener('resize', updateViewport);
-    window.visualViewport?.addEventListener('scroll', updateViewport);
 
     return () => {
       if (noticeTimer) clearTimeout(noticeTimer);
+      if (viewportTimer) clearTimeout(viewportTimer);
       window.removeEventListener('resize', updateViewport);
       window.visualViewport?.removeEventListener('resize', updateViewport);
-      window.visualViewport?.removeEventListener('scroll', updateViewport);
       client?.dispose();
     };
   });
