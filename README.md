@@ -16,7 +16,9 @@ grants, and an AI gateway for independently deployable services.
 - Bitwarden Secrets Manager for production secrets
 
 The current stack includes PostgreSQL, HomeHub Control, the Svelte portal,
-Traefik, and a Beszel server-monitoring module. The owner portal is available at `https://111.229.205.99` with a trusted
+Traefik, a Beszel server-monitoring module, and two shareable reference services.
+The Go random decider demonstrates a stateless service; the Rust shared counter
+owns a private SQLite database and demonstrates isolated durable state. The owner portal is available at `https://111.229.205.99` with a trusted
 short-lived IP certificate. Owner authentication uses an Argon2id password,
 TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
 protection. Anonymous requests cannot read the service directory APIs.
@@ -39,10 +41,13 @@ created atomically. Plaintext invitation tokens are never stored.
 
 ```sh
 make test-control
+make test-demo-decider
+make test-demo-counter
 make compose-config
 make dev-up
 make dev-check
 make public-check
+make demos-check
 ```
 
 The development portal is bound to `127.0.0.1:18080`. Traefik's development

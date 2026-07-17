@@ -220,6 +220,107 @@ services:
       homehub.visibility: owner
       homehub.share-enabled: "false"
 
+  demo-decider:
+    image: homehub/demo-decider:local
+    build:
+      context: ../..
+      dockerfile: services/demo-decider/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      DEMO_DECIDER_LISTEN_ADDRESS: :8080
+      DEMO_DECIDER_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,demo-decider
+      no_proxy: localhost,127.0.0.1,demo-decider
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/demo-decider", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-demo-decider-public.entrypoints: public-https
+      traefik.http.routers.homehub-demo-decider-public.rule: Path(`/demo/decider`) || PathPrefix(`/demo/decider/`)
+      traefik.http.routers.homehub-demo-decider-public.priority: "200"
+      traefik.http.routers.homehub-demo-decider-public.middlewares: homehub-forward-auth@file,homehub-strip-demo-decider@file,homehub-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-demo-decider-public.tls: "true"
+      traefik.http.services.homehub-demo-decider.loadbalancer.server.port: "8080"
+      homehub.id: demo-decider
+      homehub.visibility: shared
+      homehub.share-enabled: "true"
+
+  demo-counter:
+    image: homehub/demo-counter:local
+    build:
+      context: ../..
+      dockerfile: services/demo-counter/Dockerfile
+      network: host
+      args:
+        HTTP_PROXY: http://127.0.0.1:1081
+        HTTPS_PROXY: http://127.0.0.1:1081
+        http_proxy: http://127.0.0.1:1081
+        https_proxy: http://127.0.0.1:1081
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      DEMO_COUNTER_LISTEN_ADDRESS: 0.0.0.0:8080
+      DEMO_COUNTER_DATABASE_PATH: /data/counter.db
+      DEMO_COUNTER_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,demo-counter
+      no_proxy: localhost,127.0.0.1,demo-counter
+    networks:
+      - edge
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/demo-counter:/data
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/demo-counter", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-demo-counter-public.entrypoints: public-https
+      traefik.http.routers.homehub-demo-counter-public.rule: Path(`/demo/counter`) || PathPrefix(`/demo/counter/`)
+      traefik.http.routers.homehub-demo-counter-public.priority: "200"
+      traefik.http.routers.homehub-demo-counter-public.middlewares: homehub-forward-auth@file,homehub-strip-demo-counter@file,homehub-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-demo-counter-public.tls: "true"
+      traefik.http.services.homehub-demo-counter.loadbalancer.server.port: "8080"
+      homehub.id: demo-counter
+      homehub.visibility: shared
+      homehub.share-enabled: "true"
+
   beszel:
     image: henrygd/beszel:0.18.7
     restart: unless-stopped

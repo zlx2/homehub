@@ -35,6 +35,16 @@ http:
         prefixes:
           - /server
 
+    homehub-strip-demo-decider:
+      stripPrefix:
+        prefixes:
+          - /demo/decider
+
+    homehub-strip-demo-counter:
+      stripPrefix:
+        prefixes:
+          - /demo/counter
+
     homehub-beszel-security-headers:
       headers:
         contentTypeNosniff: true

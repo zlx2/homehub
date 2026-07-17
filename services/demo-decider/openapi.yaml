@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: HomeHub Demo Decider API
+  version: 1.0.0
+paths:
+  /api/decide:
+    post:
+      summary: Select one submitted option using a cryptographically secure random source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [options]
+              additionalProperties: false
+              properties:
+                options:
+                  type: array
+                  minItems: 2
+                  maxItems: 12
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+      responses:
+        "200":
+          description: A selected option
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [choice, index, decided_at]
+                properties:
+                  choice: { type: string }
+                  index: { type: integer, minimum: 0 }
+                  decided_at: { type: string, format: date-time }
+        "403": { description: Origin is not allowed }
+        "422": { description: Options failed validation }
+  /health/live:
+    get:
+      summary: Liveness probe
+      responses:
+        "200": { description: Service is live }
