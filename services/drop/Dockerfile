@@ -12,6 +12,7 @@ RUN pnpm build
 FROM golang:1.26.5-alpine3.24 AS build
 
 WORKDIR /src/services/drop
+COPY packages/go-sdk /src/packages/go-sdk
 COPY services/drop/go.mod services/drop/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY services/drop/ ./

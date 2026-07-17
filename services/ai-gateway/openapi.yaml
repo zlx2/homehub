@@ -1,0 +1,34 @@
+openapi: 3.1.0
+info:
+  title: HomeHub AI Gateway
+  version: 0.1.0
+  description: OpenAI-compatible HomeHub entry point. Provider routing is not enabled yet.
+paths:
+  /health/live:
+    get:
+      security: []
+      responses:
+        "204": { description: Process is alive }
+  /health/ready:
+    get:
+      security: []
+      responses:
+        "204": { description: Process is ready }
+  /v1/models:
+    get:
+      responses:
+        "200": { description: Available model aliases }
+        "401": { description: Valid HomeHub identity required }
+  /v1/chat/completions:
+    post:
+      description: OpenAI-compatible chat request; SSE will be used when stream is true.
+      responses:
+        "503": { description: Provider is not configured in the initial skeleton }
+components:
+  securitySchemes:
+    homehubIdentity:
+      type: apiKey
+      in: header
+      name: X-HomeHub-Identity
+security:
+  - homehubIdentity: []

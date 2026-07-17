@@ -113,7 +113,7 @@ services:
       HOMEHUB_DATABASE_PASSWORD_FILE: /run/secrets/control_db_password
       HOMEHUB_AUTH_KEY_FILE: /run/secrets/auth_encryption_key
       HOMEHUB_BOOTSTRAP_TOKEN_FILE: /run/secrets/owner_setup_token
-      HOMEHUB_DROP_IDENTITY_KEY_FILE: /run/secrets/drop_identity_key
+      HOMEHUB_IDENTITY_SIGNING_KEY_FILE: /run/secrets/identity_signing_key
       HOMEHUB_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
       HOMEHUB_SECURE_COOKIES: "true"
       HTTP_PROXY: ""
@@ -133,8 +133,8 @@ services:
       - control_db_password
       - auth_encryption_key
       - owner_setup_token
-      - source: drop_identity_key_control
-        target: drop_identity_key
+      - source: identity_signing_key_control
+        target: identity_signing_key
     read_only: true
     tmpfs:
       - /tmp
@@ -237,7 +237,7 @@ services:
       DROP_LISTEN_ADDRESS: 0.0.0.0:8080
       DROP_BASE_PATH: /drop
       DROP_DATA_DIR: /data
-      DROP_IDENTITY_KEY_FILE: /run/secrets/drop_identity_key
+      DROP_IDENTITY_PUBLIC_KEY_FILE: /run/secrets/identity_public_key
       DROP_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
       DROP_ALLOW_NON_LOOPBACK: "true"
       HTTP_PROXY: ""
@@ -251,8 +251,8 @@ services:
     volumes:
       - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/drop:/data
     secrets:
-      - source: drop_identity_key_drop
-        target: drop_identity_key
+      - source: identity_public_key
+        target: identity_public_key
     read_only: true
     tmpfs:
       - /tmp:uid=10001,gid=10001,mode=0700
@@ -471,9 +471,9 @@ secrets:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/auth_encryption_key
   owner_setup_token:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/owner_setup_token
-  drop_identity_key_control:
-    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/drop_identity_key_control
-  drop_identity_key_drop:
-    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/drop_identity_key_drop
+  identity_signing_key_control:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/identity_signing_key_control
+  identity_public_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/identity_public_key
   beszel_agent_key:
     file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/beszel_agent_key

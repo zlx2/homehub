@@ -8,6 +8,7 @@ import (
 	"drop/internal/auth"
 	"drop/internal/config"
 	"drop/internal/store"
+	"homehub.local/go-sdk/identity"
 )
 
 type API struct {
@@ -17,11 +18,11 @@ type API struct {
 	hub      *Hub
 	logger   *slog.Logger
 	limiter  *rateLimiter
-	identity *identityVerifier
+	identity *identity.Verifier
 }
 
 func (a *API) EnableHomeHubIdentity() error {
-	verifier, err := newIdentityVerifier(a.cfg.IdentityKeyFile)
+	verifier, err := identity.NewVerifierFromFile(a.cfg.IdentityPublicKeyFile, "drop")
 	if err != nil {
 		return err
 	}

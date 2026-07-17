@@ -1,10 +1,12 @@
 package identitytoken
 
 import (
-	"crypto/hmac"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +20,7 @@ const (
 )
 
 type Signer struct {
-	key []byte
+	key ed25519.PrivateKey
 	now func() time.Time
 }
 
@@ -37,19 +39,39 @@ func NewFromFile(path string) (*Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read identity signing key: %w", err)
 	}
-	key := []byte(strings.TrimSpace(string(value)))
-	if len(key) < 32 {
-		return nil, errors.New("identity signing key must contain at least 32 bytes")
+	trimmed := []byte(strings.TrimSpace(string(value)))
+	key, err := parsePrivateKey(trimmed)
+	if err != nil {
+		return nil, err
 	}
 	return &Signer{key: key, now: time.Now}, nil
 }
 
+func parsePrivateKey(value []byte) (ed25519.PrivateKey, error) {
+	if block, _ := pem.Decode(value); block != nil {
+		parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, errors.New("invalid identity signing key")
+		}
+		key, ok := parsed.(ed25519.PrivateKey)
+		if !ok || len(key) != ed25519.PrivateKeySize {
+			return nil, errors.New("identity signing key must be Ed25519")
+		}
+		return append(ed25519.PrivateKey(nil), key...), nil
+	}
+	if len(value) < 32 {
+		return nil, errors.New("identity signing key must contain at least 32 bytes")
+	}
+	seed := sha256.Sum256(value)
+	return ed25519.NewKeyFromSeed(seed[:]), nil
+}
+
 func (s *Signer) Issue(subject, name string, scopes []string, audience string) (string, error) {
-	if s == nil || len(s.key) < 32 || subject == "" || audience == "" {
+	if s == nil || len(s.key) != ed25519.PrivateKeySize || subject == "" || audience == "" {
 		return "", errors.New("invalid identity token input")
 	}
 	now := s.now().UTC()
-	header, _ := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
+	header, _ := json.Marshal(map[string]string{"alg": "EdDSA", "typ": "JWT"})
 	payload, err := json.Marshal(claims{
 		Issuer: issuer, Audience: audience, Subject: subject, Name: name,
 		Scopes: append([]string(nil), scopes...), IssuedAt: now.Unix(), Expires: now.Add(tokenTTL).Unix(),
@@ -58,9 +80,7 @@ func (s *Signer) Issue(subject, name string, scopes []string, audience string) (
 		return "", fmt.Errorf("encode identity claims: %w", err)
 	}
 	unsigned := encode(header) + "." + encode(payload)
-	mac := hmac.New(sha256.New, s.key)
-	_, _ = mac.Write([]byte(unsigned))
-	return unsigned + "." + encode(mac.Sum(nil)), nil
+	return unsigned + "." + encode(ed25519.Sign(s.key, []byte(unsigned))), nil
 }
 
 func encode(value []byte) string { return base64.RawURLEncoding.EncodeToString(value) }

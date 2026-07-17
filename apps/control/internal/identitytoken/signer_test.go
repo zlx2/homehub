@@ -1,6 +1,8 @@
 package identitytoken
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -42,6 +44,23 @@ func TestIssueUsesShortLivedServiceBoundClaims(t *testing.T) {
 	}
 	if got.Expires-got.IssuedAt != 60 {
 		t.Fatalf("token lifetime = %d seconds", got.Expires-got.IssuedAt)
+	}
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header map[string]string
+	if err := json.Unmarshal(headerBytes, &header); err != nil || header["alg"] != "EdDSA" {
+		t.Fatalf("unexpected header: %s", headerBytes)
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := sha256.Sum256([]byte(strings.Repeat("k", 32)))
+	publicKey := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
+	if !ed25519.Verify(publicKey, []byte(parts[0]+"."+parts[1]), signature) {
+		t.Fatal("token signature is invalid")
 	}
 }
 

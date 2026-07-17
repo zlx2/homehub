@@ -165,21 +165,27 @@ func (api *server) authCheck(writer http.ResponseWriter, request *http.Request) 
 		writer.Header().Set("X-HomeHub-Beszel-Email", "owner@homehub.local")
 	}
 	writer.Header().Set("X-HomeHub-Scopes", strings.Join(principal.Scopes, " "))
-	if service.ID == "drop" {
-		if api.identityIssuer == nil {
-			api.logger.Error("drop identity issuer is not configured")
-			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
-			return
-		}
-		identity, err := api.identityIssuer.Issue(principal.ID, principal.DisplayName, principal.Scopes, service.ID)
-		if err != nil {
-			api.logger.Error("issue service identity", "service_id", service.ID, "error", err)
-			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
-			return
-		}
-		writer.Header().Set("X-HomeHub-Identity", identity)
+	if err := api.setServiceIdentity(writer, principal, service); err != nil {
+		api.logger.Error("issue service identity", "service_id", service.ID, "error", err)
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "internal_error"})
+		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *server) setServiceIdentity(writer http.ResponseWriter, principal auth.Principal, service catalog.Service) error {
+	if !service.IdentityEnabled {
+		return nil
+	}
+	if api.identityIssuer == nil {
+		return errors.New("service identity issuer is not configured")
+	}
+	token, err := api.identityIssuer.Issue(principal.ID, principal.DisplayName, principal.Scopes, service.ID)
+	if err != nil {
+		return err
+	}
+	writer.Header().Set("X-HomeHub-Identity", token)
+	return nil
 }
 
 func (api *server) serviceAllowed(ctx context.Context, principal auth.Principal, service catalog.Service) (bool, error) {

@@ -36,8 +36,9 @@
 	  "description": "临时发送文字与文件；本人可管理，分享访客可直接使用。",
 	  "icon": "↓",
 	  "route": "/drop/",
-	  "visibility": "shared",
-	  "share_enabled": true,
+      "visibility": "shared",
+      "share_enabled": true,
+	  "identity_enabled": true,
 	  "health_url": "http://drop:8080/health/ready"
     }
   ]

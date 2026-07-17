@@ -29,6 +29,10 @@ dist/
 coverage/
 .npm/
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Editors and operating systems
 .idea/
 .vscode/

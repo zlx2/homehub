@@ -74,7 +74,7 @@ func serve() error {
 		return fmt.Errorf("initialize authentication: %w", err)
 	}
 	defer authService.Close()
-	identitySigner, err := identitytoken.NewFromFile(cfg.DropIdentityKeyFile)
+	identitySigner, err := identitytoken.NewFromFile(cfg.IdentitySigningKeyFile)
 	if err != nil {
 		return fmt.Errorf("initialize service identity signer: %w", err)
 	}

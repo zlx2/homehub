@@ -8,44 +8,44 @@ import (
 )
 
 type Config struct {
-	ListenAddress        string
-	CatalogFile          string
-	Environment          string
-	LogLevel             string
-	DatabaseHost         string
-	DatabasePort         string
-	DatabaseName         string
-	DatabaseUser         string
-	DatabasePasswordFile string
-	AuthKeyFile          string
-	BootstrapTokenFile   string
-	DropIdentityKeyFile  string
-	AllowedOrigins       []string
-	SecureCookies        bool
-	HealthInterval       time.Duration
-	HealthTimeout        time.Duration
-	ShutdownTimeout      time.Duration
+	ListenAddress          string
+	CatalogFile            string
+	Environment            string
+	LogLevel               string
+	DatabaseHost           string
+	DatabasePort           string
+	DatabaseName           string
+	DatabaseUser           string
+	DatabasePasswordFile   string
+	AuthKeyFile            string
+	BootstrapTokenFile     string
+	IdentitySigningKeyFile string
+	AllowedOrigins         []string
+	SecureCookies          bool
+	HealthInterval         time.Duration
+	HealthTimeout          time.Duration
+	ShutdownTimeout        time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddress:        envOrDefault("HOMEHUB_LISTEN_ADDRESS", ":8080"),
-		CatalogFile:          envOrDefault("HOMEHUB_CATALOG_FILE", "/etc/homehub/services.json"),
-		Environment:          envOrDefault("HOMEHUB_ENVIRONMENT", "development"),
-		LogLevel:             envOrDefault("HOMEHUB_LOG_LEVEL", "info"),
-		DatabaseHost:         envOrDefault("HOMEHUB_DATABASE_HOST", "postgres"),
-		DatabasePort:         envOrDefault("HOMEHUB_DATABASE_PORT", "5432"),
-		DatabaseName:         envOrDefault("HOMEHUB_DATABASE_NAME", "homehub_control"),
-		DatabaseUser:         envOrDefault("HOMEHUB_DATABASE_USER", "homehub_control"),
-		DatabasePasswordFile: envOrDefault("HOMEHUB_DATABASE_PASSWORD_FILE", "/run/secrets/control_db_password"),
-		AuthKeyFile:          envOrDefault("HOMEHUB_AUTH_KEY_FILE", "/run/secrets/auth_encryption_key"),
-		BootstrapTokenFile:   envOrDefault("HOMEHUB_BOOTSTRAP_TOKEN_FILE", "/run/secrets/owner_setup_token"),
-		DropIdentityKeyFile:  envOrDefault("HOMEHUB_DROP_IDENTITY_KEY_FILE", "/run/secrets/drop_identity_key"),
-		AllowedOrigins:       splitCSV(envOrDefault("HOMEHUB_ALLOWED_ORIGINS", "http://127.0.0.1:18080")),
-		SecureCookies:        strings.EqualFold(envOrDefault("HOMEHUB_SECURE_COOKIES", "false"), "true"),
-		HealthInterval:       10 * time.Second,
-		HealthTimeout:        2 * time.Second,
-		ShutdownTimeout:      10 * time.Second,
+		ListenAddress:          envOrDefault("HOMEHUB_LISTEN_ADDRESS", ":8080"),
+		CatalogFile:            envOrDefault("HOMEHUB_CATALOG_FILE", "/etc/homehub/services.json"),
+		Environment:            envOrDefault("HOMEHUB_ENVIRONMENT", "development"),
+		LogLevel:               envOrDefault("HOMEHUB_LOG_LEVEL", "info"),
+		DatabaseHost:           envOrDefault("HOMEHUB_DATABASE_HOST", "postgres"),
+		DatabasePort:           envOrDefault("HOMEHUB_DATABASE_PORT", "5432"),
+		DatabaseName:           envOrDefault("HOMEHUB_DATABASE_NAME", "homehub_control"),
+		DatabaseUser:           envOrDefault("HOMEHUB_DATABASE_USER", "homehub_control"),
+		DatabasePasswordFile:   envOrDefault("HOMEHUB_DATABASE_PASSWORD_FILE", "/run/secrets/control_db_password"),
+		AuthKeyFile:            envOrDefault("HOMEHUB_AUTH_KEY_FILE", "/run/secrets/auth_encryption_key"),
+		BootstrapTokenFile:     envOrDefault("HOMEHUB_BOOTSTRAP_TOKEN_FILE", "/run/secrets/owner_setup_token"),
+		IdentitySigningKeyFile: envOrDefault("HOMEHUB_IDENTITY_SIGNING_KEY_FILE", "/run/secrets/identity_signing_key"),
+		AllowedOrigins:         splitCSV(envOrDefault("HOMEHUB_ALLOWED_ORIGINS", "http://127.0.0.1:18080")),
+		SecureCookies:          strings.EqualFold(envOrDefault("HOMEHUB_SECURE_COOKIES", "false"), "true"),
+		HealthInterval:         10 * time.Second,
+		HealthTimeout:          2 * time.Second,
+		ShutdownTimeout:        10 * time.Second,
 	}
 
 	var err error

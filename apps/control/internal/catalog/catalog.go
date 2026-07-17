@@ -12,14 +12,15 @@ import (
 var serviceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
 
 type Service struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Icon         string `json:"icon"`
-	Route        string `json:"route"`
-	Visibility   string `json:"visibility"`
-	ShareEnabled bool   `json:"share_enabled"`
-	HealthURL    string `json:"health_url"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	Icon            string `json:"icon"`
+	Route           string `json:"route"`
+	Visibility      string `json:"visibility"`
+	ShareEnabled    bool   `json:"share_enabled"`
+	IdentityEnabled bool   `json:"identity_enabled"`
+	HealthURL       string `json:"health_url"`
 }
 
 type fileFormat struct {

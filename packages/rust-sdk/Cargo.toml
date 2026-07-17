@@ -1,0 +1,13 @@
+[package]
+name = "homehub-sdk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+ed25519-dalek = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

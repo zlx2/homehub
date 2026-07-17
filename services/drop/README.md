@@ -8,9 +8,9 @@ and authorization to HomeHub Control.
 
 - Public route: `/drop/` through Traefik only.
 - Internal listener: `0.0.0.0:8080` on the `homehub-edge` network.
-- Identity: short-lived `X-HomeHub-Identity` token issued by Control for the
-  `drop` audience. Drop validates signature, issuer, audience, expiry, issued
-  time, and scopes before trusting it.
+- Identity: short-lived Ed25519 `X-HomeHub-Identity` token issued by Control
+  for the `drop` audience. Drop uses the shared HomeHub Go SDK to validate the
+  signature, issuer, audience, expiry, issued time, and scopes.
 - Owner (`admin` scope): upload, list, download, change expiry, delete, and
   view storage status.
 - Shared guest (`portal.view` scope): upload, list, and download. Owner-only
@@ -38,7 +38,7 @@ binary, and produces a non-root image of roughly 10 MB.
 | `DROP_LISTEN_ADDRESS` | `0.0.0.0:8080` | Internal HTTP listener |
 | `DROP_BASE_PATH` | `/drop` | Public URL prefix |
 | `DROP_DATA_DIR` | `/data` | Service-owned persistent data |
-| `DROP_IDENTITY_KEY_FILE` | `/run/secrets/drop_identity_key` | HomeHub identity verification key |
+| `DROP_IDENTITY_PUBLIC_KEY_FILE` | `/run/secrets/identity_public_key` | HomeHub Ed25519 public verification key |
 | `DROP_ALLOWED_ORIGINS` | HomeHub public origins | Mutation origin allowlist |
 
 Size, quota, TTL, and timeout settings remain configurable through the

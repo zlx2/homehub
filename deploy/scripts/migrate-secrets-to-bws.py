@@ -21,7 +21,7 @@ SOURCE_FILES = {
     "auth_encryption_key": "auth_encryption_key",
     "owner_setup_token": "owner_setup_token",
     "beszel_agent_key": "beszel_agent_key",
-    "drop_identity_key": "drop_identity_key_control",
+    "drop_identity_key": "identity_signing_key_control",
 }
 
 
@@ -82,11 +82,6 @@ def main() -> None:
         SECRETS_DIR / "control_db_password_control"
     ).read_bytes():
         fail("Control database password copies do not match")
-    if (SECRETS_DIR / "drop_identity_key_drop").read_bytes() != (
-        SECRETS_DIR / "drop_identity_key_control"
-    ).read_bytes():
-        fail("Drop identity key copies do not match")
-
     source_values: dict[str, str] = {}
     for key, filename in SOURCE_FILES.items():
         try:

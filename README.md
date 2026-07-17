@@ -37,10 +37,35 @@ restricted guest session without registration, a password, or TOTP. Revoking a
 link immediately revokes its active guest sessions and grants. Plaintext link
 tokens are never stored.
 
+Internal service identity uses short-lived, audience-bound Ed25519 tokens.
+Only HomeHub Control receives the signing seed; business containers receive a
+read-only public key and verify tokens again with the shared Go or Rust SDK.
+Catalog entries explicitly opt in with `identity_enabled`, so adding a service
+does not require another Control code branch.
+
+## Creating a service
+
+Generate a compile-ready Go or Rust service with its health endpoints,
+OpenAPI contract, hardened image, HomeHub identity middleware, Traefik labels,
+Compose fragment, and catalog registration:
+
+```sh
+make new-service NAME=quick-notes LANG=go VISIBILITY=owner
+make new-service NAME=shared-tool LANG=rust VISIBILITY=shared
+```
+
+Compose automatically discovers `services/*/compose.homehub.yaml`. Generated
+changes remain normal source files and must pass review and tests before they
+are deployed. The provider-neutral AI Gateway skeleton exists under
+`services/ai-gateway`, but is intentionally not registered in production until
+the delegated service-to-AI identity flow from ADR 0005 is implemented.
+
 ## Development verification
 
 ```sh
 make test-control
+make test-sdk-go
+make test-sdk-rust
 make test-drop
 make compose-config
 make dev-up

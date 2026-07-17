@@ -50,6 +50,31 @@ func TestServiceAccessPolicy(t *testing.T) {
 	}
 }
 
+func TestAuthCheckIssuesIdentityForOptedInService(t *testing.T) {
+	issuer := &recordingIdentityIssuer{token: "signed-identity"}
+	api := &server{identityIssuer: issuer}
+	response := httptest.NewRecorder()
+	err := api.setServiceIdentity(response, auth.Principal{
+		ID: "owner-1", Username: "owner", DisplayName: "Luna", Scopes: []string{"admin", "portal.view"},
+	}, catalog.Service{ID: "notes", IdentityEnabled: true})
+	if err != nil || response.Header().Get("X-HomeHub-Identity") != "signed-identity" {
+		t.Fatalf("identity=%q err=%v", response.Header().Get("X-HomeHub-Identity"), err)
+	}
+	if issuer.audience != "notes" {
+		t.Fatalf("audience=%q", issuer.audience)
+	}
+}
+
+type recordingIdentityIssuer struct {
+	token    string
+	audience string
+}
+
+func (issuer *recordingIdentityIssuer) Issue(_, _ string, _ []string, audience string) (string, error) {
+	issuer.audience = audience
+	return issuer.token, nil
+}
+
 func TestRequireAdminDeniesNonAdminPrincipal(t *testing.T) {
 	api := &server{}
 	handler := api.requireAdmin(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

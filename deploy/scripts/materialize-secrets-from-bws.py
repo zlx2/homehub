@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 
+from identity_key import derive_public_key
+
 
 BWS = "/usr/local/bin/bws"
 TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/etc/homehub/bws-access-token"))
@@ -25,11 +27,9 @@ TARGETS = {
     "auth_encryption_key": [("auth_encryption_key", 65532, 65532)],
     "owner_setup_token": [("owner_setup_token", 65532, 65532)],
     "beszel_agent_key": [("beszel_agent_key", 65532, 65532)],
-    "drop_identity_key": [
-        ("drop_identity_key_control", 65532, 65532),
-        ("drop_identity_key_drop", 10001, 10001),
-    ],
 }
+
+IDENTITY_SECRET_KEY = "drop_identity_key"
 
 
 def fail(message: str) -> None:
@@ -57,14 +57,14 @@ def bws_json(arguments: list[str], environment: dict[str, str]) -> list[dict[str
     return value
 
 
-def atomic_write(path: Path, value: str, uid: int, gid: int) -> None:
+def atomic_write(path: Path, value: str, uid: int, gid: int, mode: int = 0o400) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as output:
             output.write(value)
             output.flush()
             os.fsync(output.fileno())
-            os.fchmod(output.fileno(), 0o400)
+            os.fchmod(output.fileno(), mode)
             os.fchown(output.fileno(), uid, gid)
         os.replace(temporary, path)
     finally:
@@ -92,17 +92,18 @@ def main() -> None:
         fail("the configured project was not found uniquely")
     secrets = bws_json(["secret", "list", str(matches[0]["id"])], environment)
 
+    required = set(TARGETS) | {IDENTITY_SECRET_KEY}
     values: dict[str, str] = {}
     for secret in secrets:
         key = secret.get("key")
-        if isinstance(key, str) and key in TARGETS:
+        if isinstance(key, str) and key in required:
             if key in values:
                 fail(f"duplicate Bitwarden secret key: {key}")
             value = secret.get("value")
             if not isinstance(value, str) or not value:
                 fail(f"Bitwarden secret {key} is empty")
             values[key] = value
-    missing = sorted(set(TARGETS) - set(values))
+    missing = sorted(required - set(values))
     if missing:
         fail("required secret keys are missing")
 
@@ -113,6 +114,14 @@ def main() -> None:
         for filename, uid, gid in targets:
             atomic_write(SECRETS_DIR / filename, values[key], uid, gid)
             written += 1
+    identity_secret = values[IDENTITY_SECRET_KEY]
+    try:
+        identity_public_key = derive_public_key(identity_secret)
+    except (ValueError, RuntimeError):
+        fail("identity signing secret is invalid")
+    atomic_write(SECRETS_DIR / "identity_signing_key_control", identity_secret, 65532, 65532)
+    atomic_write(SECRETS_DIR / "identity_public_key", identity_public_key, 0, 0, 0o444)
+    written += 2
     print(f"BWS materialization verified: secrets={len(values)} files={written}")
 
 

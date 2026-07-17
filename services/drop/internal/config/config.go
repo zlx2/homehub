@@ -22,10 +22,10 @@ const (
 // Config contains all process settings. Secrets are deliberately loaded only
 // from the environment and are never given source-code defaults.
 type Config struct {
-	ListenAddr      string
-	BasePath        string
-	IdentityKeyFile string
-	AllowedOrigins  map[string]struct{}
+	ListenAddr            string
+	BasePath              string
+	IdentityPublicKeyFile string
+	AllowedOrigins        map[string]struct{}
 
 	PublicAddr    string
 	PublicURL     string
@@ -68,36 +68,36 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		ListenAddr:           env("DROP_LISTEN_ADDRESS", "127.0.0.1:8080"),
-		BasePath:             env("DROP_BASE_PATH", "/drop"),
-		IdentityKeyFile:      env("DROP_IDENTITY_KEY_FILE", "/run/secrets/drop_identity_key"),
-		AllowedOrigins:       parseSet(os.Getenv("DROP_ALLOWED_ORIGINS")),
-		PublicAddr:           env("DROP_PUBLIC_ADDR", "127.0.0.1:8080"),
-		PublicURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("DROP_PUBLIC_URL")), "/"),
-		TailscaleAddr:        env("DROP_TAILSCALE_ADDR", "127.0.0.1:8081"),
-		HermesAddr:           env("DROP_HERMES_ADDR", "127.0.0.1:8082"),
-		DataDir:              env("DROP_DATA_DIR", filepath.Join(home, "drop", "data")),
-		TailscaleUsers:       parseSet(os.Getenv("DROP_TAILSCALE_USERS")),
-		HermesToken:          strings.TrimSpace(os.Getenv("DROP_HERMES_TOKEN")),
-		CookieName:           env("DROP_SESSION_COOKIE", "drop_session"),
-		CookieSecure:         true,
-		DefaultTTL:           24 * time.Hour,
-		CodeTTL:              30 * time.Minute,
-		SessionTTL:           180 * 24 * time.Hour,
-		CleanupInterval:      time.Minute,
-		TmpMaxAge:            2 * time.Hour,
-		MaxTextBytes:         defaultMaxTextBytes,
-		MaxAttachmentBytes:   defaultMaxAttachmentBytes,
-		MaxItemBytes:         defaultMaxItemBytes,
-		MaxAttachments:       10,
-		QuotaBytes:           defaultQuotaBytes,
-		InlineTextBytes:      256 << 10,
-		ReadHeaderTimeout:    10 * time.Second,
-		ReadTimeout:          15 * time.Minute,
-		WriteTimeout:         0, // streaming uploads and SSE use endpoint-level controls
-		IdleTimeout:          90 * time.Second,
-		ShutdownTimeout:      15 * time.Second,
-		TrustedPublicProxies: nil,
+		ListenAddr:            env("DROP_LISTEN_ADDRESS", "127.0.0.1:8080"),
+		BasePath:              env("DROP_BASE_PATH", "/drop"),
+		IdentityPublicKeyFile: env("DROP_IDENTITY_PUBLIC_KEY_FILE", "/run/secrets/identity_public_key"),
+		AllowedOrigins:        parseSet(os.Getenv("DROP_ALLOWED_ORIGINS")),
+		PublicAddr:            env("DROP_PUBLIC_ADDR", "127.0.0.1:8080"),
+		PublicURL:             strings.TrimRight(strings.TrimSpace(os.Getenv("DROP_PUBLIC_URL")), "/"),
+		TailscaleAddr:         env("DROP_TAILSCALE_ADDR", "127.0.0.1:8081"),
+		HermesAddr:            env("DROP_HERMES_ADDR", "127.0.0.1:8082"),
+		DataDir:               env("DROP_DATA_DIR", filepath.Join(home, "drop", "data")),
+		TailscaleUsers:        parseSet(os.Getenv("DROP_TAILSCALE_USERS")),
+		HermesToken:           strings.TrimSpace(os.Getenv("DROP_HERMES_TOKEN")),
+		CookieName:            env("DROP_SESSION_COOKIE", "drop_session"),
+		CookieSecure:          true,
+		DefaultTTL:            24 * time.Hour,
+		CodeTTL:               30 * time.Minute,
+		SessionTTL:            180 * 24 * time.Hour,
+		CleanupInterval:       time.Minute,
+		TmpMaxAge:             2 * time.Hour,
+		MaxTextBytes:          defaultMaxTextBytes,
+		MaxAttachmentBytes:    defaultMaxAttachmentBytes,
+		MaxItemBytes:          defaultMaxItemBytes,
+		MaxAttachments:        10,
+		QuotaBytes:            defaultQuotaBytes,
+		InlineTextBytes:       256 << 10,
+		ReadHeaderTimeout:     10 * time.Second,
+		ReadTimeout:           15 * time.Minute,
+		WriteTimeout:          0, // streaming uploads and SSE use endpoint-level controls
+		IdleTimeout:           90 * time.Second,
+		ShutdownTimeout:       15 * time.Second,
+		TrustedPublicProxies:  nil,
 	}
 
 	if err := applyEnv(&cfg); err != nil {
@@ -169,8 +169,8 @@ func (c Config) Validate() error {
 	if !strings.HasPrefix(c.BasePath, "/") || c.BasePath == "/" || strings.HasSuffix(c.BasePath, "/") {
 		return errors.New("DROP_BASE_PATH must be an absolute path without a trailing slash")
 	}
-	if strings.TrimSpace(c.IdentityKeyFile) == "" {
-		return errors.New("DROP_IDENTITY_KEY_FILE must not be empty")
+	if strings.TrimSpace(c.IdentityPublicKeyFile) == "" {
+		return errors.New("DROP_IDENTITY_PUBLIC_KEY_FILE must not be empty")
 	}
 	for name, addr := range map[string]string{
 		"DROP_PUBLIC_ADDR":    c.PublicAddr,
