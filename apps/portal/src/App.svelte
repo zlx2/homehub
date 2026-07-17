@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import AdminAccess from './AdminAccess.svelte';
+  import InviteEnrollment from './InviteEnrollment.svelte';
 
   type Health = { status: 'healthy' | 'unhealthy' | 'unknown'; checked_at?: string; latency_ms?: number };
   type Service = { id: string; name: string; description: string; icon: string; route?: string; visibility: 'owner' | 'shared' | 'internal'; share_enabled: boolean; health: Health };
@@ -23,6 +25,7 @@
   let totpCode = '';
   let setup: SetupResult | null = null;
   let submitting = false;
+  let inviteToken = '';
 
   async function api(path: string, init?: RequestInit) {
     const response = await fetch(path, { cache: 'no-store', ...init });
@@ -115,6 +118,13 @@
     }
   }
 
+  async function completeInvitation(enrolled: Principal) {
+    principal = enrolled;
+    inviteToken = '';
+    setupRequired = false;
+    await refresh();
+  }
+
   function cookie(name: string) {
     const prefix = `${encodeURIComponent(name)}=`;
     return document.cookie.split('; ').find((value) => value.startsWith(prefix))?.slice(prefix.length) || '';
@@ -133,6 +143,8 @@
   function checkedAt(value?: string) { return value ? new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) : '尚未检查'; }
 
   onMount(() => {
+    const match = location.hash.match(/^#invite=([A-Za-z0-9_-]{32,})$/);
+    inviteToken = match?.[1] || '';
     loadSession();
     const timer = window.setInterval(() => { if (principal) refresh(); }, 5000);
     return () => window.clearInterval(timer);
@@ -144,7 +156,9 @@
 {#if authLoading}
   <main class="auth-shell"><div class="auth-card loading-card"><div class="brand-mark">H</div><p>正在建立安全会话…</p></div></main>
 {:else if !principal}
-  <main class="auth-shell">
+  {#if inviteToken}
+    <InviteEnrollment token={inviteToken} onComplete={completeInvitation} />
+  {:else}<main class="auth-shell">
     <section class="auth-card">
       <div class="auth-brand"><div class="brand-mark">H</div><div><p class="eyebrow">PERSONAL SERVICE FABRIC</p><h1>HomeHub</h1></div></div>
       {#if setupRequired}
@@ -168,7 +182,7 @@
           </form>
         {/if}
       {:else}
-        <div class="auth-copy"><p class="kicker">OWNER SIGN IN</p><h2>欢迎回来</h2><p>使用所有者密码和 Bitwarden 中的动态验证码登录。</p></div>
+        <div class="auth-copy"><p class="kicker">SECURE SIGN IN</p><h2>欢迎回来</h2><p>使用你的账号密码和 Bitwarden 中的动态验证码登录。</p></div>
         <form on:submit|preventDefault={login}>
           <label>用户名<input bind:value={username} autocomplete="username" required /></label>
           <label>密码<input bind:value={password} type="password" autocomplete="current-password" required /></label>
@@ -178,25 +192,26 @@
         </form>
       {/if}
     </section>
-  </main>
+  </main>{/if}
 {:else}
   <main class="shell">
     <header class="topbar">
       <div class="brand"><div class="brand-mark">H</div><div><p class="eyebrow">PERSONAL SERVICE FABRIC</p><h1>HomeHub</h1></div></div>
       <div class="header-meta">{#if system}<span class="environment">{system.environment}</span><span>v{system.version}</span>{/if}<span>{principal.username}</span><button class="refresh" on:click={refresh}>刷新</button><button class="refresh" on:click={logout}>退出</button></div>
     </header>
-    <section class="hero"><div><p class="kicker">CONTROL PLANE</p><h2>你的服务，保持清醒地运转。</h2><p class="hero-copy">统一入口管理服务状态与访问边界。当前目录仅对已验证的所有者开放。</p></div>
+    <section class="hero"><div><p class="kicker">CONTROL PLANE</p><h2>你的服务，保持清醒地运转。</h2><p class="hero-copy">统一入口管理服务状态与访问边界。目录会根据当前账号的有效授权自动过滤。</p></div>
       <div class="summary"><div><strong>{services.filter((s) => s.health.status === 'healthy').length}</strong><span>健康服务</span></div><div><strong>{services.length}</strong><span>已登记</span></div><div><strong>{services.filter((s) => s.share_enabled).length}</strong><span>允许分享</span></div></div>
     </section>
-    <aside class="notice secure"><span class="notice-dot"></span>所有者会话已启用：密码 + TOTP，闲置 12 小时后过期。</aside>
+    <aside class="notice secure"><span class="notice-dot"></span>{principal.scopes.includes('admin') ? '管理员' : '朋友'}会话已启用：密码 + TOTP，闲置 12 小时后过期。</aside>
     <section class="section-heading"><div><p class="kicker">SERVICE DIRECTORY</p><h2>服务目录</h2></div><p>{lastUpdated ? `更新于 ${lastUpdated.toLocaleTimeString('zh-CN')}` : '正在读取状态'}</p></section>
     {#if error}<div class="error-panel"><strong>状态读取失败</strong><span>{error}</span></div>{/if}
     {#if loading}<div class="service-grid"><div class="service-card skeleton"></div><div class="service-card skeleton"></div></div>
-    {:else}<div class="service-grid">{#each services as service}<article class="service-card" class:unhealthy={service.health.status === 'unhealthy'}>
+    {:else if services.length}<div class="service-grid">{#each services as service}<article class="service-card" class:unhealthy={service.health.status === 'unhealthy'}>
       <div class="card-top"><div class="service-icon">{service.icon || '◇'}</div><div class="health" data-status={service.health.status}><span></span>{healthLabel(service.health.status)}</div></div>
       <div class="service-main"><p class="service-id">{service.id}</p><h3>{service.name}</h3><p>{service.description}</p></div>
       <dl class="service-meta"><div><dt>访问范围</dt><dd>{visibilityLabel(service.visibility)}</dd></div><div><dt>探测延迟</dt><dd>{service.health.latency_ms ?? 0} ms</dd></div><div><dt>最后检查</dt><dd>{checkedAt(service.health.checked_at)}</dd></div></dl>
       <footer class="card-footer"><span class:enabled={service.share_enabled}>{service.share_enabled ? '允许分享' : '禁止分享'}</span>{#if service.route}<a href={service.route}>打开服务 ↗</a>{:else}<span class="no-route">内部组件</span>{/if}</footer>
-    </article>{/each}</div>{/if}
+    </article>{/each}</div>{:else}<div class="empty-state"><strong>暂时没有可访问的服务</strong><p>账号已经生效，但管理员还没有为你分配业务服务。</p></div>{/if}
+    {#if principal.scopes.includes('admin')}<AdminAccess {services} />{/if}
   </main>
 {/if}

@@ -76,6 +76,7 @@ type PrincipalSummary struct {
 	Username    string    `json:"username"`
 	DisplayName string    `json:"display_name"`
 	Status      string    `json:"status"`
+	Scopes      []string  `json:"scopes"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -476,8 +477,10 @@ func (s *Service) ActiveServiceIDs(ctx context.Context, principalID string) (map
 }
 
 func (s *Service) ListPrincipals(ctx context.Context) ([]PrincipalSummary, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,username,display_name,status,created_at
-		FROM principals ORDER BY lower(username)`)
+	rows, err := s.pool.Query(ctx, `SELECT p.id,p.username,p.display_name,p.status,
+		COALESCE(array_agg(s.scope ORDER BY s.scope) FILTER (WHERE s.scope IS NOT NULL),'{}'),p.created_at
+		FROM principals p LEFT JOIN principal_scopes s ON s.principal_id=p.id
+		GROUP BY p.id ORDER BY lower(p.username)`)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +488,7 @@ func (s *Service) ListPrincipals(ctx context.Context) ([]PrincipalSummary, error
 	principals := make([]PrincipalSummary, 0)
 	for rows.Next() {
 		var principal PrincipalSummary
-		if err := rows.Scan(&principal.ID, &principal.Username, &principal.DisplayName, &principal.Status, &principal.CreatedAt); err != nil {
+		if err := rows.Scan(&principal.ID, &principal.Username, &principal.DisplayName, &principal.Status, &principal.Scopes, &principal.CreatedAt); err != nil {
 			return nil, err
 		}
 		principals = append(principals, principal)
