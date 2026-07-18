@@ -174,6 +174,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", closeOutside))
       :images="imageAttachments"
       :initial-index="lightboxIndex"
       @close="lightboxIndex = null"
+      @toast="emit('toast', $event)"
     />
   </article>
 </template>

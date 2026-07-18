@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 
 import AppIcon from "@/components/AppIcon.vue";
+import { isShareCancelled, shareAttachmentFile, usesNativeFileShare } from "@/download";
 import type { Attachment, Role } from "@/types";
 import { fileExtension, formatBytes, readPreviewHistory, rememberPreview } from "@/utils";
 
@@ -46,6 +47,22 @@ function handleVideoError(): void {
   showingVideo.value = false;
   videoFailed.value = true;
   emit("toast", "视频加载失败，可尝试右侧下载按钮");
+}
+
+async function handleDownload(event: MouseEvent): Promise<void> {
+  if (!usesNativeFileShare()) return;
+  event.preventDefault();
+  emit("toast", "正在准备文件…");
+  try {
+    const result = await shareAttachmentFile(props.attachment);
+    if (result === "prepared") {
+      emit("toast", "文件已准备好，再点一次即可保存");
+    } else if (result === "unsupported") {
+      emit("toast", "这个文件无法直接分享，请在 Safari 中打开 Drop");
+    }
+  } catch (reason) {
+    if (!isShareCancelled(reason)) emit("toast", "文件保存失败，请重试");
+  }
 }
 
 onMounted(() => {
@@ -109,6 +126,7 @@ onMounted(() => {
       :href="`${attachment.download_url}?download=1`"
       :download="attachment.original_name"
       :aria-label="`下载 ${attachment.original_name}`"
+      @click="handleDownload"
     >
       <AppIcon name="download" />
     </a>
