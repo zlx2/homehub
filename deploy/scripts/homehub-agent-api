@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+base_url="${HOMEHUB_BASE_URL:-https://111.229.205.99}"
+token_file="${HOMEHUB_AGENT_TOKEN_FILE:-/srv/homehub/runtime/secrets/hermes_root_token}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: homehub-api METHOD /path [curl options]
+
+Examples:
+  homehub-api GET /api/v1/system
+  homehub-api GET '/drop/api/v1/items?limit=10'
+  homehub-api POST /drop/api/v1/items \
+    -H "Idempotency-Key: $(cat /proc/sys/kernel/random/uuid)" \
+    -F 'text=hello' -F 'ttl_days=1'
+  homehub-api DELETE /drop/api/v1/items/ITEM_ID
+EOF
+  exit 2
+}
+
+[[ $# -ge 2 ]] || usage
+method="$1"
+path="$2"
+shift 2
+
+[[ "$method" =~ ^[A-Z]+$ ]] || { echo "METHOD must be uppercase" >&2; exit 2; }
+[[ "$path" == /* ]] || { echo "path must start with /" >&2; exit 2; }
+[[ -r "$token_file" ]] || { echo "HomeHub agent token is unavailable" >&2; exit 1; }
+
+token="$(<"$token_file")"
+[[ -n "$token" ]] || { echo "HomeHub agent token is empty" >&2; exit 1; }
+
+# Feed the authorization header through a file descriptor so it is not exposed
+# in the curl process arguments or command history. IP-based TLS is intentional.
+exec 3<<<"header = \"Authorization: Bearer ${token}\""
+curl --config /dev/fd/3 \
+  --insecure \
+  --fail-with-body \
+  --silent \
+  --show-error \
+  --request "$method" \
+  "${base_url}${path}" \
+  "$@"

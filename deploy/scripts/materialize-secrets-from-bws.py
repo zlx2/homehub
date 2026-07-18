@@ -17,6 +17,8 @@ BWS = "/usr/local/bin/bws"
 TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/etc/homehub/bws-access-token"))
 PROJECT_NAME = os.environ.get("HOMEHUB_BWS_PROJECT", "HomeHub Production")
 SECRETS_DIR = Path(os.environ.get("HOMEHUB_SECRETS_DIR", "/srv/homehub/runtime/secrets"))
+HERMES_UID = int(os.environ.get("HOMEHUB_HERMES_UID", "1000"))
+HERMES_GID = int(os.environ.get("HOMEHUB_HERMES_GID", "1001"))
 
 TARGETS = {
     "postgres_superuser_password": [("postgres_superuser_password", 70, 70)],
@@ -32,7 +34,7 @@ TARGETS = {
 }
 
 OPTIONAL_TARGETS = {
-    "hermes_root_token": [("hermes_root_token", 1000, 1001)],
+    "hermes_root_token": [("hermes_root_token", HERMES_UID, HERMES_GID)],
 }
 
 IDENTITY_SECRET_KEY = "drop_identity_key"
@@ -114,8 +116,12 @@ def main() -> None:
     if missing:
         fail("required secret keys are missing: " + ", ".join(missing))
 
-    SECRETS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(SECRETS_DIR, 0o700)
+    hermes_root_enabled = "hermes_root_token" in values
+    secrets_gid = HERMES_GID if hermes_root_enabled else 0
+    secrets_mode = 0o710 if hermes_root_enabled else 0o700
+    SECRETS_DIR.mkdir(parents=True, exist_ok=True, mode=secrets_mode)
+    os.chown(SECRETS_DIR, 0, secrets_gid)
+    os.chmod(SECRETS_DIR, secrets_mode)
     written = 0
     for key, targets in TARGETS.items():
         for filename, uid, gid in targets:
