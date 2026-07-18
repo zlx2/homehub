@@ -1,4 +1,25 @@
-# Development infrastructure
+# Deployment infrastructure
+
+> **Current deployment:** HomeHub V2 uses `compose.v2.yaml` together with the
+> ignored `.env.v2` file. The rest of this document describes the older
+> development/V1 stack and is retained only as migration reference. Do not run
+> the V1 and V2 commands interchangeably.
+
+## V2 quick reference
+
+```sh
+cd /home/ubuntu/homehub-v2
+make v2-config
+make v2-up
+make v2-check
+make v2-logs
+```
+
+V2 persistent data is under `/srv/homehub-v2` plus the named PostgreSQL volume.
+Public routing is defined in `deploy/traefik-v2`, and the public domain is
+`zlx2.com` through Cloudflare Tunnel.
+
+## Legacy development infrastructure
 
 The default Compose profile starts only Traefik and the restricted Docker socket
 proxy. It binds the development HTTP entry point and dashboard to loopback:

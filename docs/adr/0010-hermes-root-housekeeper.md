@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted and implemented — 2026-07-18
+Superseded for V2 — the V1 implementation described below is historical. V2
+uses the `agent:hermes` principal, `system.root`, machine credential exchange,
+and audience-bound short-lived tokens described in
+`0011-v2-identity-and-service-architecture.md`. The running Hermes Agent is not
+currently connected to the V2 stack.
 
 ## Context
 

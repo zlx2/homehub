@@ -1,29 +1,53 @@
-# Hermes HomeHub integration
+# Hermes and HomeHub V2
 
-Hermes is HomeHub's root housekeeper. A long-lived, revocable `agent.root` token is
-stored in Bitwarden Secrets Manager as `hermes_root_token` and materialized to:
+## Current status
+
+Nous Research Hermes Agent under `~/.hermes` is a separate host system. It is
+not started, stopped, upgraded, or required by the active HomeHub V2 Compose
+stack.
+
+The repository contains historical V1 wrappers, a Hermes web-terminal service,
+and the V2 `agent`/`system.root` identity model. Those pieces must not be read as
+proof that the running Hermes installation is currently connected to V2. As of
+2026-07-19:
+
+- no Hermes container exists in `compose.v2.yaml`;
+- the Hermes web-terminal route is not active in V2;
+- the current HomeHub catalog may still list the terminal as unavailable;
+- no repository documentation should expose or assume a reusable raw token.
+
+## Intended V2 integration
+
+Hermes should authenticate as the stable principal `agent:hermes` using a
+revocable machine credential stored outside Git. The agent exchanges that
+credential with IAM for short-lived tokens whose audience matches the target
+service.
 
 ```text
-/srv/homehub/runtime/secrets/hermes_root_token
+Hermes machine credential
+  -> IAM token exchange
+  -> token(sub=agent:hermes, aud=target-service, permissions=[...])
+  -> target service
 ```
 
-The token file is readable only by the Hermes host user. The containing secrets
-directory grants that user's group traverse permission but not directory listing.
-Other HomeHub secret files retain their individual ownership and modes.
+For an explicit human delegation, IAM may instead issue a token whose subject is
+the human and whose `act` claim records `agent:hermes`. This preserves the
+difference between “Hermes acted directly” and “Hermes acted for Luna”.
 
-Hermes calls HomeHub through `homehub-api`. The wrapper sends the credential to
-Control, which authorizes the requested catalog service and issues a short-lived,
-audience-bound internal identity. Business services never receive the long-lived
-root token directly.
+`system.root` is the reserved V2 permission for the trusted housekeeper. Even a
+root token remains short-lived and audience-bound; the IAM signing key and human
+session cookie are never given to Hermes.
 
-Install the repository-backed entry points on the server:
+## Work required before enabling
 
-```bash
-mkdir -p ~/.local/bin ~/.hermes/skills/homehub-housekeeper
-ln -sfn /home/ubuntu/homehub/deploy/scripts/homehub-agent-api ~/.local/bin/homehub-api
-ln -sfn /home/ubuntu/homehub/integrations/hermes/homehub/SKILL.md \
-  ~/.hermes/skills/homehub-housekeeper/SKILL.md
-```
+1. Provision or verify the `agent:hermes` principal in V2 IAM.
+2. Store its machine credential in Bitwarden and materialize a host-readable,
+   least-exposed credential file.
+3. Add/update an API wrapper or Hermes Skill that performs IAM token exchange.
+4. Verify `system.root` handling in each target service.
+5. Add integration tests for direct agent action and delegated action.
+6. Decide separately whether the native Hermes web terminal returns to the V2
+   Compose and Traefik route.
 
-Run the BWS materializer after creating or rotating the secret. A new Hermes
-session discovers the skill; Hermes itself does not need to be restarted.
+Do not reuse historical `/home/ubuntu/homehub` symlinks or the V1
+`hermes_root_token` flow without a deliberate migration review.

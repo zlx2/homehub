@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted and implemented — 2026-07-17
+Accepted; implementation and tests exist, but AI Gateway is not deployed in the
+active V2 Compose stack as of 2026-07-19.
 
 ## Decision
 

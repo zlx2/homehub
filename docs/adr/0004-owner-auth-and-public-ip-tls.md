@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted — 2026-07-17
+Superseded as the primary public-access plan. HomeHub now uses `zlx2.com`
+through Cloudflare Tunnel; direct-IP TLS remains historical/fallback context.
 
 ## Decision
 

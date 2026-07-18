@@ -1,27 +1,61 @@
 # Architecture overview
 
-## Request path
+## Public request path
 
-1. A client connects to Traefik over HTTPS.
-2. Traefik asks HomeHub Control to authorize protected requests.
-3. HomeHub Control validates the owner or guest session and requested scope.
-4. Traefik removes untrusted identity headers and forwards trusted short-lived identity context.
-5. The destination service validates issuer, audience, expiry, and scopes.
-6. The service reads and writes only its own database and file volumes.
+```text
+client
+  -> Cloudflare Tunnel
+  -> Traefik
+  -> IAM ForwardAuth for protected routes
+  -> audience-bound short-lived token
+  -> Control or business service
+```
+
+1. A client connects to `zlx2.com` over HTTPS.
+2. Cloudflare Tunnel carries the request to the V2 Traefik origin.
+3. Traefik clears client-supplied authorization context and tells IAM which
+   audience is being requested.
+4. IAM validates the HomeHub browser session or direct-share capability and
+   returns a short-lived Ed25519 token.
+5. Traefik forwards that trusted token to the target service.
+6. The service validates signature, issuer, audience, expiry, and permissions
+   locally before reading or writing its own resources.
+
+Portal static assets and IAM login endpoints are reachable before login. Control
+and Drop routes require the ForwardAuth flow. Workload-to-service calls skip the
+browser edge and exchange their own machine credential directly with IAM.
 
 ## Configuration ownership
 
-- Compose and labels: deployment, networking, route declarations, catalog defaults.
-- Bitwarden Secrets Manager: credentials, signing keys, provider API keys.
-- HomeHub Control database: principals, sessions, service grants, expiry,
-  revocation, scopes, and audit events.
-- Service database: service-owned business data.
+- `deploy/compose/compose.v2.yaml`: runtime services, networks, mounts, loopback
+  ports, and health checks.
+- `deploy/traefik-v2`: public hosts, paths, TLS, header cleanup, and ForwardAuth.
+- Bitwarden Secrets Manager: credentials, signing keys, provider API keys, bot
+  tokens, and tunnel token source material.
+- IAM database: principals, sessions, credentials, grants, delegation, and
+  authorization/audit state.
+- OpenFGA database: relationship tuples and authorization models.
+- Control catalog: service presentation and health targets.
+- Service database/files: service-owned business data only.
 
 ## Network intent
 
-- Edge network: Traefik and explicitly routed HTTP services.
-- Backend network: internal service-to-service APIs.
-- Data network: PostgreSQL, Redis, and their authorized clients.
-- Only approved host ports are published.
-- Existing MySQL 42061 and Redis 38291 public endpoints remain available.
-- New PostgreSQL is internal-only.
+- `homehub-v2-edge`: Traefik, Cloudflared, IAM, Control, Portal, and explicitly
+  routed services.
+- `homehub-v2-backend`: internal service APIs and IAM/OpenFGA communication;
+  marked internal.
+- `homehub-v2-data`: PostgreSQL and authorized clients; marked internal.
+- Telegram Bridge currently uses host networking only to reach the host Mihomo
+  proxy and loopback V2 endpoints.
+- PostgreSQL and OpenFGA are not public.
+- Existing MySQL `42061` and Redis `38291` public endpoints are intentionally
+  preserved outside the V2 trust boundary.
+
+## UI boundary
+
+- Portal owns login, account/security screens, direct-share management, and the
+  aggregate service dashboard.
+- A business service may own an independent UI under its route. Drop currently
+  serves its own React application at `/drop/`.
+- UI state and disabled buttons are never authorization truth; the receiving
+  API always verifies its IAM token and permission.

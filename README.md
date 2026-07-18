@@ -1,75 +1,95 @@
 # HomeHub
 
-HomeHub is a personal service platform for one or more private servers. It
-provides a shared public edge, identity and authorization, a modular portal,
-agent delegation, service discovery, and independently deployable business
-services.
+HomeHub 是部署在个人服务器上的服务聚合平台：统一公网入口、统一身份与权限、统一首页，并让每个业务能力保持为可独立开发和部署的微服务。
 
-V2 is an intentional clean rebuild. V1 test data, sessions, tokens, database
-schemas, and API compatibility are not retained.
+当前版本是 V2 探索版。测试数据可以重建，目标优先级是快速迭代、边界清楚、后续容易增加服务，而不是复杂的高可用系统。
 
-## V2 stack
+## 当前状态
 
-- Traefik for TLS termination and public routing
-- Go 1.26.5 as the default backend language
-- React 19, TypeScript, Vite, and Tailwind CSS for the static portal
-- Rust stable 1.97 only for measured performance, memory, parsing, or safety needs
-- OpenFGA for relationship authorization
-- PostgreSQL for durable data, with a database and user owned by each service
-- Redis for cache, rate limits, and transient work only
-- Docker Compose for deployment and service discovery
-- Bitwarden Secrets Manager for production credentials and private keys
+- 公网入口：<https://zlx2.com>
+- 代码仓库：`git@gitee.com:zlx23/homehub.git`（私有）
+- 活跃分支：`codex/v2-architecture`
+- 服务器工作区：`/home/ubuntu/homehub-v2`
+- 部署方式：Docker Compose
+- 公网链路：Cloudflare Tunnel → Traefik → IAM 前置鉴权 → Portal / 微服务
 
-## Control plane
+截至 2026-07-19，V2 正在运行：Traefik、Cloudflared、IAM、OpenFGA、Control、Portal、Drop、Telegram Bridge、PostgreSQL 和 ACME Challenge。Drop 已拥有独立的 React 页面；Portal 登录后首页提供服务状态与跳转入口。
 
-- `apps/iam`: principals, credentials, sessions, authorization orchestration,
-  delegation, token exchange, signing keys, and audit
-- `apps/control`: service catalog, health aggregation, node metadata, and portal
-  control-plane APIs
-- `apps/portal`: the single React application shell and its feature modules
-- `OpenFGA`: group, role, ownership, and cross-resource relationships
+Hermes Agent 仍是服务器上的独立系统。仓库中虽然保留 Hermes Web Terminal、Beszel 和 AI Gateway 的实现或配置，但它们尚未纳入当前 `compose.v2.yaml` 运行栈，不应视为已上线的 V2 服务。
 
-HomeHub uses six stable principal kinds: `human`, `guest`, `device`, `node`,
-`workload`, and `agent`. Permissions use
-`<service>.<resource>.<action>`. Hermes is the trusted housekeeper agent and may
-receive the reserved `system.root` permission, but still uses short-lived,
-audience-bound tokens and remains attributable as the actual actor.
+完整盘点见 [当前项目状态](docs/current-state.md)。
 
-## Business services
+## 技术栈
 
-Business services live under `services`. Each service owns its API, database,
-migrations, local resource rules, and versioned service manifest. Services do
-not read another service's database and do not trust identity headers supplied
-by clients.
+- Traefik 3.7：公网路由、TLS 和前置鉴权
+- Cloudflare Tunnel：绕过源站域名访问限制并隐藏常规访问路径
+- Go 1.26.5：IAM、Control、Drop、Telegram Bridge 等后端
+- React 19 + TypeScript + Vite：Portal 与 Drop 独立前端
+- PostgreSQL 18：持久数据，每个服务拥有独立数据库和数据库用户
+- OpenFGA：关系型授权
+- Ed25519 JWT：短期、受众绑定的内部身份令牌
+- Bitwarden Secrets Manager：生产密钥来源
+- Rust 1.97：预留给确有性能、内存或安全收益的业务服务，目前不是默认选择
 
-The normal request path validates a short-lived Ed25519 token locally. IAM and
-OpenFGA are not network dependencies for every business request.
+## 目录
 
-## Development
-
-The authoritative development worktree is `/home/ubuntu/homehub-v2` on the
-HomeHub server. The previous `/home/ubuntu/homehub` tree is retained only as a
-reference during reconstruction.
-
-```sh
-make test-iam
-make test-iam-integration
-make test-control
-make test-control-integration
-make test-portal
-make test-sdk-go
-make v2-config
-make v2-up
-make v2-check
+```text
+apps/
+  iam/                 身份、会话、通行密钥、授权和令牌签发
+  control/             服务目录与健康状态聚合
+  portal/              HomeHub 登录页与聚合首页
+services/
+  drop/                原始文件中转服务和独立 React 页面
+  telegram-bridge/     Telegram → Drop 转发
+  ai-gateway/          内部模型网关（代码存在，当前 V2 未运行）
+  hermes-terminal-web/ Hermes 网页终端（代码存在，当前 V2 未运行）
+packages/
+  go-sdk/              Go 服务身份验证 SDK
+  rust-sdk/            Rust 服务身份验证 SDK
+deploy/
+  compose/             V1 参考栈与当前 V2 Compose
+  traefik-v2/          当前公网路由
+  catalog/             Control 服务目录
+  scripts/             部署、密钥和检查脚本
+docs/                  架构、ADR、开发和运维文档
 ```
 
-The loopback-only V2 development endpoints are Portal `127.0.0.1:18080`, IAM
-`127.0.0.1:18100`, and Control `127.0.0.1:18110`. Public routing remains a
-separate edge migration step.
+## 常用命令
 
-Production secrets, private keys, certificates, `.env` files, and runtime data
-must never be committed. Persistent runtime data lives outside this repository.
+命令应在服务器仓库根目录执行：
 
-See [ADR 0011](docs/adr/0011-v2-identity-and-service-architecture.md) and the
-[V2 component boundaries](docs/architecture/v2-boundaries.md) for the current
-architecture contract.
+```sh
+cd /home/ubuntu/homehub-v2
+
+make v2-config          # 校验 Compose
+make v2-up              # 构建并启动完整 V2
+make v2-check           # 检查核心服务
+make v2-logs            # 查看 V2 日志
+
+make test-iam
+make test-control
+make test-drop
+make test-telegram-bridge
+make test-portal
+```
+
+生产密钥、证书、`.env.v2`、数据库和上传文件都不属于 Git 仓库。
+
+## 文档入口
+
+- [当前项目状态](docs/current-state.md)：现网组件、资源、路由、数据与已知问题
+- [开发指南](docs/development-guide.md)：本地/服务器开发、测试、部署和新增服务流程
+- [后续路线](docs/next-steps.md)：按优先级整理的待办与架构决策
+- [V2 边界](docs/architecture/v2-boundaries.md)：IAM、Control、Portal 与业务服务职责
+- [网络架构](docs/architecture/networking.md)：网络和端口约束
+- [ADR 目录](docs/adr/)：已经做出的关键架构决策
+
+## 不变的工程约束
+
+- 公网 HTTP 流量统一进入 Traefik。
+- IAM 是身份和权限事实来源；业务服务不信任客户端自行提供的身份头。
+- 每个服务只访问自己的数据库和文件目录。
+- Redis 只能用于缓存或临时队列，不能作为唯一持久数据源。
+- 不向应用容器挂载不受限的 Docker Socket。
+- 不引入 Kubernetes、Nacos、Service Mesh 或消息队列，除非先写 ADR 并证明当前方案不足。
+- MySQL `42061` 与 Redis `38291` 是明确保留的既有公网端口，后续单独加固。
