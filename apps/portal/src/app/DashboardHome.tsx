@@ -53,7 +53,7 @@ type Service = {
 
 const serviceDefinitions: Service[] = [
   { id: 'hermes', catalogId: 'hermes-terminal', name: 'Hermes', summary: '网页终端', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Bot, tone: 'cyan', route: '/hermes/' },
-  { id: 'drop', catalogId: 'drop', name: 'Drop', summary: '文本与原始文件', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Droplets, tone: 'sky', route: '/drop', spa: true },
+  { id: 'drop', catalogId: 'drop', name: 'Drop', summary: '文本与原始文件', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Droplets, tone: 'sky', route: '/drop/' },
   { id: 'telegram', name: 'Telegram', summary: '消息转发到 Drop', status: 'healthy', statusLabel: '运行中', section: 'common', icon: Send, tone: 'blue' },
   { id: 'ai', catalogId: 'ai-gateway', name: 'AI Gateway', summary: 'DeepSeek · OpenCode', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Network, tone: 'teal' },
   { id: 'server', catalogId: 'server-monitor', name: '服务器面板', summary: '资源与容器监控', status: 'stopped', statusLabel: '检查中', section: 'other', icon: ServerCog, tone: 'cyan', route: '/server/' },

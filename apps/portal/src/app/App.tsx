@@ -117,7 +117,7 @@ export function App() {
   const [state, setState] = useState<SessionState>(); const [path, setPath] = useState(location.pathname); const [error, setError] = useState('');
   const reload = async () => setState(await iam.session());
   useEffect(() => { const hash = new URLSearchParams(location.hash.slice(1)); const token = hash.get('share'); if (token) { iam.redeem(token).then(() => { history.replaceState({}, '', hash.get('path') || '/drop'); setPath(location.pathname); return reload(); }).catch((e) => { setError(message(e)); reload(); }); } else reload(); const pop = () => setPath(location.pathname); addEventListener('popstate', pop); return () => removeEventListener('popstate', pop); }, []);
-  function navigate(next: string) { history.pushState({}, '', next); setPath(next); }
+  function navigate(next: string) { if (next === '/drop') { location.assign('/drop/'); return; } history.pushState({}, '', next); setPath(next); }
   if (!state) return <div className="loading"><span className="brand-mark">H</span><i/></div>;
   if (!state.authenticated) return <><Auth state={state} reload={reload}/>{error && <div className="toast">{error}</div>}</>;
   const actualPath = !state.administrator && path !== '/drop' ? '/drop' : path;

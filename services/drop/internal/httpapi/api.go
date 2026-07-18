@@ -51,17 +51,18 @@ type TokenVerifier interface {
 }
 
 type API struct {
-	config   config.Config
-	storage  Storage
-	verifier TokenVerifier
-	logger   *slog.Logger
+	config    config.Config
+	storage   Storage
+	verifier  TokenVerifier
+	logger    *slog.Logger
+	eventsHub *eventHub
 }
 
 func New(configuration config.Config, storage Storage, verifier TokenVerifier, logger *slog.Logger) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	api := &API{config: configuration, storage: storage, verifier: verifier, logger: logger}
+	api := &API{config: configuration, storage: storage, verifier: verifier, logger: logger, eventsHub: newEventHub()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", api.live)
 	mux.HandleFunc("GET /health/ready", api.ready)
@@ -69,7 +70,11 @@ func New(configuration config.Config, storage Storage, verifier TokenVerifier, l
 	mux.Handle("GET /v1/items", api.authenticate(permissionList, http.HandlerFunc(api.listItems)))
 	mux.Handle("GET /v1/items/{id}", api.authenticate(permissionRead, http.HandlerFunc(api.getItem)))
 	mux.Handle("DELETE /v1/items/{id}", api.authenticate(permissionDelete, http.HandlerFunc(api.deleteItem)))
+	mux.Handle("PATCH /v1/items/{id}/expiry", api.authenticate(permissionDelete, http.HandlerFunc(api.updateExpiry)))
 	mux.Handle("GET /v1/attachments/{id}", api.authenticate(permissionRead, http.HandlerFunc(api.getAttachment)))
+	mux.Handle("GET /v1/status", api.authenticate(permissionList, http.HandlerFunc(api.status)))
+	mux.Handle("GET /v1/events", api.authenticate(permissionList, http.HandlerFunc(api.events)))
+	mux.Handle("GET /", webHandler())
 	return api.requestID(api.securityHeaders(api.logging(mux)))
 }
 
@@ -206,6 +211,7 @@ func (api *API) createItem(response http.ResponseWriter, request *http.Request) 
 		writeStoreError(response, err)
 		return
 	}
+	api.eventsHub.publish()
 	writeJSON(response, http.StatusCreated, api.itemResponse(item))
 }
 
@@ -296,7 +302,51 @@ func (api *API) deleteItem(response http.ResponseWriter, request *http.Request) 
 		writeStoreError(response, err)
 		return
 	}
+	api.eventsHub.publish()
 	response.WriteHeader(http.StatusNoContent)
+}
+
+type expiryStorage interface {
+	UpdateExpiry(context.Context, string, time.Duration) (store.Item, error)
+}
+type statsStorage interface {
+	Stats(context.Context) (store.Stats, error)
+}
+
+func (api *API) updateExpiry(response http.ResponseWriter, request *http.Request) {
+	storage, ok := api.storage.(expiryStorage)
+	if !ok {
+		writeError(response, http.StatusNotImplemented, "expiry_unavailable")
+		return
+	}
+	var body struct {
+		TTLDays int `json:"ttl_days"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(response, request.Body, 1024)).Decode(&body) != nil || (body.TTLDays != 1 && body.TTLDays != 3 && body.TTLDays != 7) {
+		writeError(response, http.StatusBadRequest, "invalid_ttl")
+		return
+	}
+	item, err := storage.UpdateExpiry(request.Context(), request.PathValue("id"), time.Duration(body.TTLDays)*24*time.Hour)
+	if err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	api.eventsHub.publish()
+	writeJSON(response, http.StatusOK, api.itemResponse(item))
+}
+
+func (api *API) status(response http.ResponseWriter, request *http.Request) {
+	storage, ok := api.storage.(statsStorage)
+	if !ok {
+		writeError(response, http.StatusNotImplemented, "status_unavailable")
+		return
+	}
+	stats, err := storage.Stats(request.Context())
+	if err != nil {
+		writeStoreError(response, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"status": "ok", "storage": stats})
 }
 
 func (api *API) getAttachment(response http.ResponseWriter, request *http.Request) {

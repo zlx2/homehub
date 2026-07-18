@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ type fakeStorage struct {
 	created        store.CreateInput
 	items          []store.Item
 	attachmentPath string
+	expiry         time.Duration
 }
 
 func (storage *fakeStorage) Ready(context.Context) error { return nil }
@@ -67,6 +69,13 @@ func (storage *fakeStorage) OpenAttachment(context.Context, string) (*os.File, s
 	return file, store.Attachment{ID: "file-1", OriginalName: "原图.png", MediaType: "image/png", Size: int64(len(contents)), SHA256: hash[:], CreatedAt: time.Now()}, nil
 }
 func (*fakeStorage) Delete(context.Context, string) error { return nil }
+func (storage *fakeStorage) UpdateExpiry(_ context.Context, id string, ttl time.Duration) (store.Item, error) {
+	storage.expiry = ttl
+	return store.Item{ID: id, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(ttl), Attachments: []store.Attachment{}}, nil
+}
+func (*fakeStorage) Stats(context.Context) (store.Stats, error) {
+	return store.Stats{UsedBytes: 42, QuotaBytes: 1024, ItemCount: 2, AttachmentCount: 1}, nil
+}
 
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
@@ -155,6 +164,43 @@ func TestAttachmentReturnsOriginalInline(t *testing.T) {
 	}
 	if disposition := response.Header().Get("Content-Disposition"); len(disposition) < 6 || disposition[:6] != "inline" {
 		t.Fatalf("disposition=%q", disposition)
+	}
+}
+
+func TestOwnerCanUpdateExpiryAndReadStatus(t *testing.T) {
+	t.Parallel()
+	storage := &fakeStorage{temporary: t.TempDir()}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	handler := New(testConfig(t), storage, fakeVerifier{claims: identity.Claims{Permissions: []string{permissionDelete}}}, logger)
+	request := httptest.NewRequest(http.MethodPatch, "/v1/items/item-1/expiry", strings.NewReader(`{"ttl_days":3}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || storage.expiry != 72*time.Hour {
+		t.Fatalf("status=%d expiry=%s body=%s", response.Code, storage.expiry, response.Body.String())
+	}
+
+	handler = New(testConfig(t), storage, fakeVerifier{claims: identity.Claims{Permissions: []string{permissionList}}}, logger)
+	request = httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"used_bytes":42`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestExpiryRequiresDeletePermission(t *testing.T) {
+	t.Parallel()
+	storage := &fakeStorage{temporary: t.TempDir()}
+	handler := New(testConfig(t), storage, fakeVerifier{claims: identity.Claims{Permissions: []string{permissionList}}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	request := httptest.NewRequest(http.MethodPatch, "/v1/items/item-1/expiry", strings.NewReader(`{"ttl_days":1}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -55,3 +55,10 @@ type ListOptions struct {
 	Before   time.Time
 	BeforeID string
 }
+
+type Stats struct {
+	UsedBytes       int64 `json:"used_bytes"`
+	QuotaBytes      int64 `json:"quota_bytes"`
+	ItemCount       int64 `json:"item_count"`
+	AttachmentCount int64 `json:"attachment_count"`
+}

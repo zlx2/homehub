@@ -358,6 +358,29 @@ func (store *Store) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (store *Store) UpdateExpiry(ctx context.Context, id string, ttl time.Duration) (Item, error) {
+	if id == "" || ttl <= 0 {
+		return Item{}, ErrInvalidInput
+	}
+	command, err := store.pool.Exec(ctx, `UPDATE items SET expires_at=$2 WHERE id=$1 AND expires_at > now()`, id, store.now().UTC().Add(ttl))
+	if err != nil {
+		return Item{}, err
+	}
+	if command.RowsAffected() == 0 {
+		return Item{}, ErrNotFound
+	}
+	return store.Get(ctx, id)
+}
+
+func (store *Store) Stats(ctx context.Context) (Stats, error) {
+	stats := Stats{QuotaBytes: store.quotaBytes}
+	err := store.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(total_size),0), COUNT(*),
+		(SELECT COUNT(*) FROM attachments a JOIN items i ON i.id=a.item_id WHERE i.expires_at > now())
+		FROM items WHERE expires_at > now()`).Scan(&stats.UsedBytes, &stats.ItemCount, &stats.AttachmentCount)
+	return stats, err
+}
+
 func (store *Store) CleanupExpired(ctx context.Context, limit int) (int, error) {
 	if limit < 1 {
 		limit = 100
