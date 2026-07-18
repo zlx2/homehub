@@ -53,11 +53,19 @@ reference during reconstruction.
 
 ```sh
 make test-iam
+make test-iam-integration
 make test-control
+make test-control-integration
 make test-portal
 make test-sdk-go
-make compose-config
+make v2-config
+make v2-up
+make v2-check
 ```
+
+The loopback-only V2 development endpoints are Portal `127.0.0.1:18080`, IAM
+`127.0.0.1:18100`, and Control `127.0.0.1:18110`. Public routing remains a
+separate edge migration step.
 
 Production secrets, private keys, certificates, `.env` files, and runtime data
 must never be committed. Persistent runtime data lives outside this repository.

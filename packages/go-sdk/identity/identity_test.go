@@ -56,13 +56,13 @@ func TestVerifierRejectsInvalidClaims(t *testing.T) {
 	}
 
 	tests := map[string]Claims{
-		"wrong audience": mutate(base, func(claims *Claims) { claims.Audience = "homehub-ai" }),
-		"bad subject": mutate(base, func(claims *Claims) { claims.Subject = "unknown:thing" }),
-		"bad actor": mutate(base, func(claims *Claims) { claims.Actor = &Actor{Subject: "root"} }),
-		"bad permission": mutate(base, func(claims *Claims) { claims.Permissions = []string{"drop.*"} }),
+		"wrong audience":    mutate(base, func(claims *Claims) { claims.Audience = "homehub-ai" }),
+		"bad subject":       mutate(base, func(claims *Claims) { claims.Subject = "unknown:thing" }),
+		"bad actor":         mutate(base, func(claims *Claims) { claims.Actor = &Actor{Subject: "root"} }),
+		"bad permission":    mutate(base, func(claims *Claims) { claims.Permissions = []string{"drop.*"} }),
 		"empty permissions": mutate(base, func(claims *Claims) { claims.Permissions = nil }),
-		"expired": mutate(base, func(claims *Claims) { claims.Expires = now.Add(-time.Second).Unix() }),
-		"too long": mutate(base, func(claims *Claims) { claims.Expires = now.Add(10 * time.Minute).Unix() }),
+		"expired":           mutate(base, func(claims *Claims) { claims.Expires = now.Add(-time.Second).Unix() }),
+		"too long":          mutate(base, func(claims *Claims) { claims.Expires = now.Add(10 * time.Minute).Unix() }),
 	}
 	for name, claims := range tests {
 		claims := claims

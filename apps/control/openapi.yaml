@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: HomeHub Control API
+  version: 0.2.0
+  description: HomeHub service catalog and dashboard aggregation API.
+security:
+  - accessToken: []
+paths:
+  /health/live:
+    get:
+      operationId: getControlLiveness
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+  /health/ready:
+    get:
+      operationId: getControlReadiness
+      security: []
+      responses:
+        "200":
+          description: Catalog and IAM verification keys are loaded
+  /v1/whoami:
+    get:
+      operationId: getControlIdentity
+      responses:
+        "200":
+          description: Verified caller identity
+        "401":
+          description: Missing, invalid, expired, or wrong-audience token
+  /v1/overview:
+    get:
+      operationId: getHomeHubOverview
+      x-homehub-permissions: [control.dashboard.read]
+      responses:
+        "200":
+          description: HomeHub overview and current service health
+        "401":
+          description: Missing, invalid, expired, or wrong-audience token
+        "403":
+          description: Token lacks control.dashboard.read
+  /v1/services:
+    get:
+      operationId: listHomeHubServices
+      x-homehub-permissions: [control.dashboard.read]
+      responses:
+        "200":
+          description: Versioned service catalog with health status
+  /v1/nodes:
+    get:
+      operationId: listHomeHubNodes
+      x-homehub-permissions: [control.node.read]
+      responses:
+        "200":
+          description: Registered HomeHub nodes
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: HomeHub EdDSA access token

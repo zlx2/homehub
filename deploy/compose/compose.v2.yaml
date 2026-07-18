@@ -115,6 +115,43 @@ services:
     cap_drop:
       - ALL
 
+  control:
+    image: homehub/control:v2-local
+    build:
+      context: ../..
+      dockerfile: apps/control/Dockerfile
+      network: host
+      args:
+        VERSION: ${HOMEHUB_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      iam:
+        condition: service_healthy
+    environment:
+      HOMEHUB_CONTROL_LISTEN_ADDRESS: :8080
+      HOMEHUB_CONTROL_ENVIRONMENT: ${HOMEHUB_ENVIRONMENT:-development}
+      HOMEHUB_CONTROL_IAM_JWKS_URL: http://iam:8080/.well-known/jwks.json
+      HOMEHUB_CONTROL_CATALOG_FILE: /etc/homehub/catalog.json
+      HOMEHUB_CONTROL_HEALTH_TIMEOUT: 1500ms
+    networks:
+      - edge
+      - backend
+    ports:
+      - "127.0.0.1:18110:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "/homehub-control", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   portal:
     image: homehub/portal:v2-local
     build:
@@ -122,6 +159,9 @@ services:
       dockerfile: apps/portal/Dockerfile
       network: host
     restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
     environment:
       HTTP_PROXY: ""
       HTTPS_PROXY: ""

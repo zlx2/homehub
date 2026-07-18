@@ -15,14 +15,14 @@ import (
 const (
 	Issuer               = "homehub-iam"
 	SystemRootPermission = "system.root"
-	maxTokenBytes         = 8192
-	clockSkew             = 15 * time.Second
+	maxTokenBytes        = 8192
+	clockSkew            = 15 * time.Second
 )
 
 var (
-	principalID   = regexp.MustCompile(`^(human|guest|device|node|workload|agent):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-	permissionID  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}$`)
-	audienceID    = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
+	principalID  = regexp.MustCompile(`^(human|guest|device|node|workload|agent):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	permissionID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}$`)
+	audienceID   = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
 )
 
 type Actor struct {
@@ -164,6 +164,12 @@ func BearerToken(request *http.Request) (string, error) {
 
 type principalContextKey struct{}
 
+// ContextWithClaims attaches claims that have already been verified by a
+// HomeHub token verifier. It does not perform verification itself.
+func ContextWithClaims(ctx context.Context, claims Claims) context.Context {
+	return context.WithValue(ctx, principalContextKey{}, claims)
+}
+
 func FromContext(ctx context.Context) (Claims, bool) {
 	claims, ok := ctx.Value(principalContextKey{}).(Claims)
 	return claims, ok
@@ -194,7 +200,7 @@ func (verifier *Verifier) Authenticate(requiredAny []string, next http.Handler) 
 				return
 			}
 		}
-		ctx := context.WithValue(request.Context(), principalContextKey{}, claims)
+		ctx := ContextWithClaims(request.Context(), claims)
 		next.ServeHTTP(response, request.WithContext(ctx))
 	})
 }

@@ -1,119 +1,117 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
-var serviceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
-var modelAliasPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,62}$`)
+const maxCatalogBytes = 256 << 10
 
-type Service struct {
-	ID              string   `json:"id"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	Icon            string   `json:"icon"`
-	Route           string   `json:"route"`
-	Visibility      string   `json:"visibility"`
-	ShareEnabled    bool     `json:"share_enabled"`
-	IdentityEnabled bool     `json:"identity_enabled"`
-	AIEnabled       bool     `json:"ai_enabled"`
-	AIModels        []string `json:"ai_models"`
-	HealthURL       string   `json:"health_url"`
-}
+var serviceID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-type fileFormat struct {
+type Document struct {
+	Version  int       `json:"version"`
 	Services []Service `json:"services"`
 }
 
+type Service struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"`
+	HealthURL   string `json:"health_url"`
+	Path        string `json:"path"`
+	Visibility  string `json:"visibility"`
+}
+
+type Status struct {
+	State      string    `json:"state"`
+	CheckedAt  time.Time `json:"checked_at"`
+	LatencyMS  int64     `json:"latency_ms"`
+	StatusCode int       `json:"status_code,omitempty"`
+}
+
+type View struct {
+	Service
+	Status Status `json:"status"`
+}
+
 func Load(path string) ([]Service, error) {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open service catalog: %w", err)
 	}
-	var file fileFormat
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&file); err != nil {
-		return nil, fmt.Errorf("decode catalog: %w", err)
+	defer file.Close()
+	contents, err := io.ReadAll(io.LimitReader(file, maxCatalogBytes+1))
+	if err != nil || len(contents) > maxCatalogBytes {
+		return nil, errors.New("read service catalog")
 	}
-	if len(file.Services) == 0 {
-		return nil, fmt.Errorf("catalog must define at least one service")
+	var document Document
+	if json.Unmarshal(contents, &document) != nil || document.Version != 1 || len(document.Services) == 0 {
+		return nil, errors.New("invalid service catalog")
 	}
-	seen := make(map[string]struct{}, len(file.Services))
-	for index := range file.Services {
-		if err := validate(file.Services[index]); err != nil {
-			return nil, fmt.Errorf("service %d: %w", index, err)
+	seen := make(map[string]struct{}, len(document.Services))
+	for index := range document.Services {
+		service := &document.Services[index]
+		parsed, parseErr := url.Parse(service.HealthURL)
+		if !serviceID.MatchString(service.ID) || strings.TrimSpace(service.Name) == "" || strings.TrimSpace(service.Kind) == "" ||
+			parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil ||
+			!strings.HasPrefix(service.Path, "/") || (service.Visibility != "owner" && service.Visibility != "shared" && service.Visibility != "public") {
+			return nil, fmt.Errorf("invalid catalog service at index %d", index)
 		}
-		if _, exists := seen[file.Services[index].ID]; exists {
-			return nil, fmt.Errorf("duplicate service id %q", file.Services[index].ID)
+		if _, duplicate := seen[service.ID]; duplicate {
+			return nil, fmt.Errorf("duplicate catalog service %q", service.ID)
 		}
-		seen[file.Services[index].ID] = struct{}{}
+		seen[service.ID] = struct{}{}
 	}
-	return file.Services, nil
+	sort.Slice(document.Services, func(i, j int) bool { return document.Services[i].ID < document.Services[j].ID })
+	return document.Services, nil
 }
 
-func validate(service Service) error {
-	if !serviceIDPattern.MatchString(service.ID) {
-		return fmt.Errorf("invalid id %q", service.ID)
+func Probe(ctx context.Context, client *http.Client, services []Service) []View {
+	views := make([]View, len(services))
+	var wait sync.WaitGroup
+	for index, service := range services {
+		index, service := index, service
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			views[index] = View{Service: service, Status: probeOne(ctx, client, service.HealthURL)}
+		}()
 	}
-	if strings.TrimSpace(service.Name) == "" {
-		return fmt.Errorf("name must not be empty")
-	}
-	if service.Route != "" && !strings.HasPrefix(service.Route, "/") {
-		return fmt.Errorf("route must be empty or start with /")
-	}
-	switch service.Visibility {
-	case "owner", "shared", "internal":
-	default:
-		return fmt.Errorf("invalid visibility %q", service.Visibility)
-	}
-	if service.AIEnabled && !service.IdentityEnabled {
-		return fmt.Errorf("ai_enabled requires identity_enabled")
-	}
-	if service.AIEnabled && len(service.AIModels) == 0 {
-		return fmt.Errorf("ai_enabled requires at least one ai_models entry")
-	}
-	if !service.AIEnabled && len(service.AIModels) != 0 {
-		return fmt.Errorf("ai_models requires ai_enabled")
-	}
-	seenModels := make(map[string]struct{}, len(service.AIModels))
-	for _, model := range service.AIModels {
-		if !modelAliasPattern.MatchString(model) {
-			return fmt.Errorf("invalid AI model alias %q", model)
-		}
-		if _, exists := seenModels[model]; exists {
-			return fmt.Errorf("duplicate AI model alias %q", model)
-		}
-		seenModels[model] = struct{}{}
-	}
-	healthURL, err := url.Parse(service.HealthURL)
-	if err != nil || healthURL.Host == "" || (healthURL.Scheme != "http" && healthURL.Scheme != "https") {
-		return fmt.Errorf("health_url must be an absolute HTTP URL")
-	}
-	return nil
+	wait.Wait()
+	return views
 }
 
-func MatchRoute(services []Service, requestURI string) (Service, bool) {
-	path := strings.TrimSpace(strings.SplitN(requestURI, "?", 2)[0])
-	var matched Service
-	matchedLength := -1
-	for _, service := range services {
-		base := strings.TrimSuffix(service.Route, "/")
-		if base == "" {
-			continue
-		}
-		if path != base && !strings.HasPrefix(path, base+"/") {
-			continue
-		}
-		if len(base) > matchedLength {
-			matched = service
-			matchedLength = len(base)
-		}
+func probeOne(ctx context.Context, client *http.Client, endpoint string) Status {
+	started := time.Now()
+	status := Status{State: "unavailable", CheckedAt: started.UTC()}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return status
 	}
-	return matched, matchedLength >= 0
+	response, err := client.Do(request)
+	status.LatencyMS = time.Since(started).Milliseconds()
+	if err != nil {
+		return status
+	}
+	defer response.Body.Close()
+	status.StatusCode = response.StatusCode
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		status.State = "healthy"
+	} else {
+		status.State = "degraded"
+	}
+	return status
 }

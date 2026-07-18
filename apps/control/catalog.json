@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "services": [
+    {
+      "id": "iam",
+      "name": "身份与权限",
+      "description": "HomeHub 身份、令牌与授权中心",
+      "kind": "control-plane",
+      "health_url": "http://iam:8080/health/ready",
+      "path": "/identity",
+      "visibility": "owner"
+    },
+    {
+      "id": "control",
+      "name": "系统看板",
+      "description": "服务目录与系统状态聚合",
+      "kind": "control-plane",
+      "health_url": "http://127.0.0.1:8080/health/ready",
+      "path": "/",
+      "visibility": "owner"
+    },
+    {
+      "id": "portal",
+      "name": "HomeHub Portal",
+      "description": "React 聚合界面",
+      "kind": "portal",
+      "health_url": "http://portal:8080/health",
+      "path": "/",
+      "visibility": "owner"
+    }
+  ]
+}

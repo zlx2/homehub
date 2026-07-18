@@ -46,9 +46,16 @@ workload -> IAM token exchange (cached until near expiry)
 Delegated agent request:
 
 ```text
-Hermes credential -> IAM -> token(sub=human:luna, act=agent:hermes)
+Hermes credential -> IAM -> token(sub=agent:hermes)
                          -> audience-bound target service
+
+Hermes acting for a human -> IAM -> token(sub=human:luna, act=agent:hermes)
+                                  -> audience-bound target service
 ```
+
+The first form records a direct machine action. The second form is used only
+when a human explicitly delegates a bounded action; `act` always records the
+actual executor, so delegation never erases attribution.
 
 ## Service manifest
 

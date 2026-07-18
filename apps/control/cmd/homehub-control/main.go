@@ -12,26 +12,21 @@ import (
 	"syscall"
 	"time"
 
-	"homehub.local/control/internal/auth"
 	"homehub.local/control/internal/catalog"
 	"homehub.local/control/internal/config"
-	"homehub.local/control/internal/health"
 	"homehub.local/control/internal/httpapi"
-	"homehub.local/control/internal/identitytoken"
+	"homehub.local/go-sdk/identity"
 )
 
-var (
-	version   = "dev"
-	commit    = "unknown"
-	buildTime = "unknown"
-)
+var version = "dev"
+var commit = "unknown"
+var buildTime = "unknown"
 
 func main() {
 	command := "serve"
 	if len(os.Args) > 1 {
 		command = os.Args[1]
 	}
-
 	var err error
 	switch command {
 	case "serve":
@@ -43,7 +38,6 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown command %q", command)
 	}
-
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -55,109 +49,61 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}
-
 	logger := newLogger(cfg.LogLevel)
 	services, err := catalog.Load(cfg.CatalogFile)
 	if err != nil {
-		return fmt.Errorf("load service catalog: %w", err)
+		return err
 	}
-	authService, err := auth.Open(context.Background(), auth.Config{
-		Host:               cfg.DatabaseHost,
-		Port:               cfg.DatabasePort,
-		Database:           cfg.DatabaseName,
-		User:               cfg.DatabaseUser,
-		PasswordFile:       cfg.DatabasePasswordFile,
-		EncryptionKeyFile:  cfg.AuthKeyFile,
-		BootstrapTokenFile: cfg.BootstrapTokenFile,
-	})
+	identityClient := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	loadContext, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
+	keys, err := identity.FetchJWKSet(loadContext, identityClient, cfg.IAMJWKSURL)
+	cancelLoad()
 	if err != nil {
-		return fmt.Errorf("initialize authentication: %w", err)
+		return fmt.Errorf("initialize IAM verification keys: %w", err)
 	}
-	defer authService.Close()
-	identitySigner, err := identitytoken.NewFromFile(cfg.IdentitySigningKeyFile)
+	verifier, err := identity.NewVerifier(keys, "homehub-control", 2*time.Minute)
 	if err != nil {
-		return fmt.Errorf("initialize service identity signer: %w", err)
+		return fmt.Errorf("initialize access token verifier: %w", err)
 	}
-
-	monitor := health.NewMonitor(services, cfg.HealthInterval, cfg.HealthTimeout)
+	healthClient := &http.Client{Timeout: cfg.HealthTimeout, Transport: &http.Transport{Proxy: nil}}
 	handler := httpapi.New(httpapi.Options{
-		Logger:         logger,
-		Services:       services,
-		Statuses:       monitor,
-		Version:        version,
-		Commit:         commit,
-		Environment:    cfg.Environment,
-		Auth:           authService,
-		AllowedOrigins: cfg.AllowedOrigins,
-		SecureCookies:  cfg.SecureCookies,
-		IdentityIssuer: identitySigner,
+		Logger: logger, Verifier: verifier, Services: services, HealthClient: healthClient,
+		Version: version, Commit: commit, Environment: cfg.Environment,
 	})
-
 	server := &http.Server{
-		Addr:              cfg.ListenAddress,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Addr: cfg.ListenAddress, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
-	go monitor.Run(ctx)
-
-	errCh := make(chan error, 1)
+	errorsChannel := make(chan error, 1)
 	go func() {
-		logger.Info("homehub control listening",
-			"address", cfg.ListenAddress,
-			"environment", cfg.Environment,
-			"services", len(services),
-			"version", version,
-			"commit", commit,
-		)
-		if listenErr := server.ListenAndServe(); listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
-			errCh <- listenErr
+		logger.Info("HomeHub Control listening", "address", cfg.ListenAddress, "services", len(services), "version", version)
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errorsChannel <- err
 		}
-		close(errCh)
+		close(errorsChannel)
 	}()
-
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown requested")
-	case listenErr := <-errCh:
-		if listenErr != nil {
-			return fmt.Errorf("serve HTTP: %w", listenErr)
+	case err := <-errorsChannel:
+		if err != nil {
+			return err
 		}
 	}
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	defer shutdownCancel()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown HTTP server: %w", err)
-	}
-	return nil
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancelShutdown()
+	return server.Shutdown(shutdownContext)
 }
 
 func healthcheck() error {
-	url := strings.TrimSpace(os.Getenv("HOMEHUB_HEALTHCHECK_URL"))
-	if url == "" {
-		url = "http://127.0.0.1:8080/health/live"
-	}
-
-	client := &http.Client{
-		Timeout: 2 * time.Second,
-		Transport: &http.Transport{
-			Proxy: nil,
-		},
-	}
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
-	if err != nil {
-		return fmt.Errorf("build health request: %w", err)
-	}
+	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	request, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:8080/health/live", nil)
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("health request: %w", err)
+		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -166,9 +112,9 @@ func healthcheck() error {
 	return nil
 }
 
-func newLogger(levelName string) *slog.Logger {
+func newLogger(name string) *slog.Logger {
 	level := slog.LevelInfo
-	switch strings.ToLower(levelName) {
+	switch strings.ToLower(name) {
 	case "debug":
 		level = slog.LevelDebug
 	case "warn":
