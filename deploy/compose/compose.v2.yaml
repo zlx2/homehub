@@ -9,6 +9,7 @@ services:
       POSTGRES_PASSWORD: ${V2_POSTGRES_PASSWORD:?set V2_POSTGRES_PASSWORD}
       HOMEHUB_IAM_DB_PASSWORD: ${V2_IAM_DB_PASSWORD:?set V2_IAM_DB_PASSWORD}
       OPENFGA_DB_PASSWORD: ${V2_OPENFGA_DB_PASSWORD:?set V2_OPENFGA_DB_PASSWORD}
+      HOMEHUB_DROP_DB_PASSWORD_FILE: /run/secrets/drop_db_password
       TZ: ${TZ:-Asia/Hong_Kong}
     command:
       - postgres
@@ -23,6 +24,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ../postgres/v2-init:/docker-entrypoint-initdb.d:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -143,6 +145,50 @@ services:
       - /tmp
     healthcheck:
       test: ["CMD", "/homehub-control", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  drop:
+    image: homehub/drop:v2-local
+    build:
+      context: ../..
+      dockerfile: services/drop/Dockerfile
+      network: host
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      iam:
+        condition: service_healthy
+    environment:
+      HOMEHUB_DROP_LISTEN_ADDRESS: :8080
+      HOMEHUB_DROP_DATABASE_HOST: postgres
+      HOMEHUB_DROP_DATABASE_PORT: "5432"
+      HOMEHUB_DROP_DATABASE_NAME: homehub_drop
+      HOMEHUB_DROP_DATABASE_USER: homehub_drop
+      HOMEHUB_DROP_DATABASE_PASSWORD_FILE: /run/secrets/drop_db_password
+      HOMEHUB_DROP_DATA_DIRECTORY: /data
+      HOMEHUB_DROP_IAM_JWKS_URL: http://iam:8080/.well-known/jwks.json
+    networks:
+      - edge
+      - backend
+      - data
+    ports:
+      - "127.0.0.1:18120:8080"
+    read_only: true
+    volumes:
+      - ${V2_DATA_ROOT:-/srv/homehub-v2/data}/drop:/data
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "/homehub-drop", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 10

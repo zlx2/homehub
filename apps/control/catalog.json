@@ -2,6 +2,15 @@
   "version": 1,
   "services": [
     {
+      "id": "drop",
+      "name": "Drop",
+      "description": "原图与文本临时中转服务",
+      "kind": "business-service",
+      "health_url": "http://drop:8080/health/ready",
+      "path": "/drop",
+      "visibility": "shared"
+    },
+    {
       "id": "iam",
       "name": "身份与权限",
       "description": "HomeHub 身份、令牌与授权中心",

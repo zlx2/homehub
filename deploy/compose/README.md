@@ -52,6 +52,19 @@ file. It creates separate copies where Control, PostgreSQL, and Drop require
 different Unix ownership. Do not place the BWS access token in `.env`, shell
 history, Compose configuration, or Git.
 
+The V2 development stack currently shares one `drop_db_password` file between
+PostgreSQL initialization and Drop. The PostgreSQL image drops supplementary
+groups before running initialization scripts, so the file must be owned by the
+PostgreSQL UID and readable by Drop's primary GID. Its parent directory only
+needs search permission:
+
+```sh
+sudo chown ubuntu:root /srv/homehub-v2/runtime
+sudo chmod 0711 /srv/homehub-v2/runtime
+sudo chown 70:10001 /srv/homehub-v2/runtime/drop_db_password
+sudo chmod 0440 /srv/homehub-v2/runtime/drop_db_password
+```
+
 AI Gateway additionally requires `ai_deepseek_api_key` and
 `ai_opencode_go_api_key` in the same Bitwarden project. These values are mounted
 only into the internal AI Gateway container; business services receive signed,

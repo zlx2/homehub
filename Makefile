@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-drop-integration test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -19,21 +19,22 @@ status: ## Show repository status
 v2-config: ## Validate the V2 development Compose configuration
 	@docker compose $(V2_COMPOSE_ARGS) config --quiet
 
-v2-up: ## Build and start the V2 IAM, Control, OpenFGA, PostgreSQL, and React portal
+v2-up: ## Build and start the V2 IAM, Control, Drop, OpenFGA, PostgreSQL, and React portal
 	@docker compose $(V2_COMPOSE_ARGS) up -d --build --wait --wait-timeout 90
 
-v2-check: ## Check the running V2 IAM, Control, and portal
+v2-check: ## Check the running V2 IAM, Control, Drop, and portal
 	@curl --fail --silent http://127.0.0.1:18100/health/ready >/dev/null
 	@curl --fail --silent http://127.0.0.1:18100/v1/metadata >/dev/null
 	@curl --fail --silent http://127.0.0.1:18100/.well-known/jwks.json >/dev/null
 	@curl --fail --silent http://127.0.0.1:18110/health/ready >/dev/null
+	@curl --fail --silent http://127.0.0.1:18120/health/ready >/dev/null
 	@curl --fail --silent http://127.0.0.1:18080/health >/dev/null
 
 v2-down: ## Stop the V2 development stack without deleting test data
 	@docker compose $(V2_COMPOSE_ARGS) down
 
 v2-logs: ## Follow V2 development logs
-	@docker compose $(V2_COMPOSE_ARGS) logs -f iam control openfga postgres portal
+	@docker compose $(V2_COMPOSE_ARGS) logs -f iam control drop openfga postgres portal
 
 compose-config: ## Validate the development Compose configuration
 	@docker compose $(COMPOSE_ARGS) config --quiet
@@ -80,8 +81,21 @@ test-sdk-rust: ## Run the HomeHub Rust SDK tests
 		-e HTTP_PROXY=http://127.0.0.1:1081 -e HTTPS_PROXY=http://127.0.0.1:1081 \
 		-v "$(CURDIR)/packages/rust-sdk:/src" -w /src rust:1.97-alpine3.24 cargo test
 
-test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
-	@docker build --network host -f services/drop/Dockerfile -t homehub/drop:test .
+test-drop: ## Run Drop V2 tests with the pinned Go toolchain
+	@docker run --rm --network host --user $$(id -u):$$(id -g) \
+		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
+		-e HTTP_PROXY=http://127.0.0.1:1081 -e HTTPS_PROXY=http://127.0.0.1:1081 \
+		-v "$(CURDIR):/repo" -w /repo/services/drop golang:1.26.5-alpine3.24 go test ./...
+
+test-drop-integration: ## Upload, read, and delete an original file through live Drop V2
+	@docker run --rm --network host --user $$(id -u):$$(id -g) \
+		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
+		-e HOMEHUB_IAM_INTEGRATION_URL=http://127.0.0.1:18100 \
+		-e HOMEHUB_DROP_INTEGRATION_URL=http://127.0.0.1:18120 \
+		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
+		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-w /repo/services/drop golang:1.26.5-alpine3.24 go test -count=1 -run TestLiveDropAuthorizationAndOriginalFile ./integration
 
 test-telegram-bridge: ## Run Telegram Bridge tests with the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \
