@@ -1,6 +1,84 @@
 name: homehub-v2
 
 services:
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: iam,control,drop,portal,acme-challenge,localhost,127.0.0.1
+      no_proxy: iam,control,drop,portal,acme-challenge,localhost,127.0.0.1
+    depends_on:
+      acme-challenge:
+        condition: service_healthy
+      iam:
+        condition: service_healthy
+      control:
+        condition: service_healthy
+      drop:
+        condition: service_healthy
+      portal:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:18181:8081"
+    networks:
+      - edge
+    volumes:
+      - ../traefik-v2/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ../traefik-v2/dynamic:/etc/traefik/dynamic:ro
+      - ${HOMEHUB_V1_ROOT:-/srv/homehub}/runtime/tls:/run/homehub-tls:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/tls-zlx2:/run/homehub-domain-tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  acme-challenge:
+    image: nginx:1.29.8-alpine
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+    networks:
+      - edge
+    volumes:
+      - ${HOMEHUB_V1_ROOT:-/srv/homehub}/runtime/acme-webroot:/usr/share/nginx/html:ro
+      - ../acme/nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:uid=101,gid=101,mode=0750
+      - /var/run:uid=101,gid=101,mode=0750
+      - /tmp:uid=101,gid=101,mode=0750
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   postgres:
     image: postgres:18.4-alpine
     restart: unless-stopped
@@ -94,6 +172,12 @@ services:
       HOMEHUB_IAM_SIGNING_KEY_FILE: /run/secrets/iam_signing_key
       HOMEHUB_IAM_SIGNING_KEY_ID: v2-dev-1
       HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE: /run/secrets/root_agent_token
+      HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE: /run/secrets/auth_encryption_key
+      HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE: /run/secrets/owner_setup_token
+      HOMEHUB_IAM_ALLOWED_ORIGINS: ${V2_ALLOWED_ORIGINS:-https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080}
+      HOMEHUB_IAM_SECURE_COOKIES: ${V2_SECURE_COOKIES:-true}
+      HOMEHUB_IAM_PASSKEY_RP_ID: ${V2_PASSKEY_RP_ID:-zlx2.com}
+      HOMEHUB_IAM_PASSKEY_ORIGINS: ${V2_PASSKEY_ORIGINS:-https://zlx2.com}
     networks:
       - edge
       - backend
@@ -104,6 +188,8 @@ services:
     volumes:
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_signing_key:/run/secrets/iam_signing_key:ro
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/auth_encryption_key:/run/secrets/auth_encryption_key:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/owner_setup_token:/run/secrets/owner_setup_token:ro
     tmpfs:
       - /tmp
     healthcheck:

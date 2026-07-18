@@ -31,7 +31,7 @@ type realm
   relations
     define owner: [human]
     define root: [human, agent]
-    define administrator: [human, agent, group#member] or root
+    define administrator: [human, agent, group#member] or owner or root
     define member: [human, guest, device, workload, agent, group#member] or administrator
 
 type service

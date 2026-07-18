@@ -85,6 +85,94 @@ paths:
           description: Token lacks iam.principal.manage or iam.grant.manage
         "409":
           description: External machine identity already exists
+  /v1/session:
+    get:
+      operationId: getBrowserSession
+      responses:
+        "200":
+          description: Browser session and initial-setup state
+  /v1/setup/begin:
+    post:
+      operationId: beginOwnerSetup
+      responses:
+        "201":
+          description: Pending owner setup and TOTP provisioning data
+  /v1/setup/confirm:
+    post:
+      operationId: confirmOwnerSetup
+      responses:
+        "201":
+          description: Owner created and browser session established
+  /v1/login:
+    post:
+      operationId: loginWithPasswordAndTOTP
+      responses:
+        "200":
+          description: Browser session established
+        "401":
+          description: Invalid credentials
+  /v1/logout:
+    post:
+      operationId: logoutBrowserSession
+      security:
+        - browserSession: []
+      responses:
+        "204":
+          description: Browser session revoked
+  /v1/passkeys/login/begin:
+    post:
+      operationId: beginDiscoverablePasskeyLogin
+      responses:
+        "200":
+          description: WebAuthn credential request options
+  /v1/passkeys/login/finish:
+    post:
+      operationId: finishDiscoverablePasskeyLogin
+      responses:
+        "200":
+          description: Passkey verified and browser session established
+        "401":
+          description: Passkey verification failed
+  /v1/passkeys/registration/begin:
+    post:
+      operationId: beginPasskeyRegistration
+      security:
+        - browserSession: []
+      responses:
+        "200":
+          description: WebAuthn credential creation options
+  /v1/passkeys/registration/finish:
+    post:
+      operationId: finishPasskeyRegistration
+      security:
+        - browserSession: []
+      responses:
+        "201":
+          description: Passkey registered
+  /v1/passkeys:
+    get:
+      operationId: listPasskeys
+      security:
+        - browserSession: []
+      responses:
+        "200":
+          description: Passkeys belonging to the current human principal
+  /v1/passkeys/{id}:
+    delete:
+      operationId: deletePasskey
+      security:
+        - browserSession: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Passkey deleted
+        "404":
+          description: Passkey not found
   /health/live:
     get:
       operationId: getLiveness
@@ -112,3 +200,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: HomeHub EdDSA access token
+    browserSession:
+      type: apiKey
+      in: cookie
+      name: hh_session

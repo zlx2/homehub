@@ -41,6 +41,8 @@ OPTIONAL_TARGETS = {
 }
 
 V2_OPTIONAL_TARGETS = {
+    "auth_encryption_key": [("auth_encryption_key", 65532, 65532)],
+    "owner_setup_token": [("owner_setup_token", 65532, 65532)],
     "telegram_bot_token": [("telegram_bot_token", 65532, 65532)],
     "telegram_bridge_credential": [("telegram_bridge_credential", 65532, 65532)],
 }

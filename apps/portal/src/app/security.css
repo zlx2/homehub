@@ -1,0 +1,12 @@
+.auth-divider{display:flex;align-items:center;gap:12px;color:#657180;font-size:11px}.auth-divider:before,.auth-divider:after{content:"";height:1px;flex:1;background:var(--line)}
+.passkey-button{width:100%}
+.security-card{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:21px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.security-card>div{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:13px}
+.security-card h2{margin:0;font-size:18px}
+.security-card p{grid-column:2;margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.security-icon{grid-row:1/3;display:grid;place-items:center;width:45px;height:45px;border-radius:13px;color:var(--accent);background:rgba(141,230,183,.08)}
+.passkey-list{display:grid;gap:9px;margin-top:20px}
+.passkey-list article{display:flex;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px}
+.passkey-list article div{display:grid;gap:5px}.passkey-list small{color:var(--muted);font-size:10px}
+.passkey-list button{display:flex;align-items:center;gap:6px;margin-left:auto;border:0;background:none;color:var(--danger);font-size:11px}
+@media(max-width:700px){.security-card{align-items:stretch;flex-direction:column}.security-card .primary-button{width:100%}.security-card>div{align-items:start}}

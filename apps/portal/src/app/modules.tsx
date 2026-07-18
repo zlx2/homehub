@@ -31,7 +31,7 @@ export const modules: HomeHubModule[] = [
     icon: HardDriveUpload,
     accent: '#8cc8ff',
     requiredPermissions: ['drop.item.read'],
-    status: 'building',
+    status: 'available',
   },
   {
     id: 'hermes',

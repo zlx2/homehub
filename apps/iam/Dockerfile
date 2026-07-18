@@ -6,6 +6,10 @@ COPY apps/iam /src/apps/iam
 WORKDIR /src/apps/iam
 
 ARG VERSION=dev
+ARG HTTP_PROXY=
+ARG HTTPS_PROXY=
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/homehub-iam ./cmd/homehub-iam
 
 FROM scratch

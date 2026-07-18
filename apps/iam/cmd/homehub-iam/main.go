@@ -15,6 +15,7 @@ import (
 	"gitee.com/zlx23/homehub/apps/iam/internal/bootstrap"
 	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
+	"gitee.com/zlx23/homehub/apps/iam/internal/humanauth"
 	"gitee.com/zlx23/homehub/apps/iam/internal/machineadmin"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
@@ -76,6 +77,10 @@ func main() {
 			slog.Error("service manifest synchronization failed", "service", manifest.ServiceID, "error", err)
 			os.Exit(1)
 		}
+		if err := openFGA.WriteRelationship(context.Background(), authorizationState, "realm:homehub", "realm", "service:"+manifest.ServiceID); err != nil {
+			slog.Error("service realm relationship synchronization failed", "service", manifest.ServiceID, "error", err)
+			os.Exit(1)
+		}
 	}
 
 	signingKeyFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_FILE"))
@@ -109,6 +114,26 @@ func main() {
 	slog.Info("root agent ready", "subject", rootAgent.Subject())
 	tokenExchange := exchange.New(store, openFGA, authorizationState, signer)
 	machineAdministrator := machineadmin.New(store, openFGA, authorizationState)
+	humanAuthCtx, humanAuthCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	humanAuthentication, err := humanauth.Open(humanAuthCtx, humanauth.Options{
+		DatabaseURL:        databaseURL,
+		EncryptionKeyFile:  strings.TrimSpace(os.Getenv("HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE")),
+		BootstrapTokenFile: strings.TrimSpace(os.Getenv("HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE")),
+		Authorization:      openFGA,
+		AuthorizationState: authorizationState,
+		Policies:           store,
+		Signer:             signer,
+		PasskeyRPID:        environmentOrDefault("HOMEHUB_IAM_PASSKEY_RP_ID", "zlx2.com"),
+		PasskeyOrigins:     splitCSV(environmentOrDefault("HOMEHUB_IAM_PASSKEY_ORIGINS", "https://zlx2.com")),
+	})
+	humanAuthCancel()
+	if err != nil {
+		slog.Error("human authentication initialization failed", "error", err)
+		os.Exit(1)
+	}
+	defer humanAuthentication.Close()
+	allowedOrigins := splitCSV(environmentOrDefault("HOMEHUB_IAM_ALLOWED_ORIGINS", "https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080"))
+	secureCookies := !strings.EqualFold(strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SECURE_COOKIES")), "false")
 
 	server := &http.Server{
 		Addr: address,
@@ -120,10 +145,13 @@ func main() {
 				}
 				return openFGA.Ping(ctx)
 			},
-			JWKSet:    signer.JWKSet(),
-			Exchanger: tokenExchange,
-			Verifier:  iamVerifier,
-			Machines:  machineAdministrator,
+			JWKSet:         signer.JWKSet(),
+			Exchanger:      tokenExchange,
+			Verifier:       iamVerifier,
+			Machines:       machineAdministrator,
+			Humans:         humanAuthentication,
+			AllowedOrigins: allowedOrigins,
+			SecureCookies:  secureCookies,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -148,6 +176,24 @@ func main() {
 		slog.Error("HomeHub IAM stopped unexpectedly", "error", err)
 		os.Exit(1)
 	}
+}
+
+func environmentOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func databaseURLFromEnvironment() (string, error) {

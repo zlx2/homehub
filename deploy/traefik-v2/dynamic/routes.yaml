@@ -1,0 +1,134 @@
+tls:
+  certificates:
+    - certFile: /run/homehub-tls/fullchain.pem
+      keyFile: /run/homehub-tls/privkey.pem
+    - certFile: /run/homehub-domain-tls/fullchain.pem
+      keyFile: /run/homehub-domain-tls/privkey.pem
+
+http:
+  routers:
+    acme:
+      entryPoints: [web]
+      rule: PathPrefix(`/.well-known/acme-challenge/`)
+      priority: 1000
+      service: acme
+    redirect-www-http:
+      entryPoints: [web]
+      rule: Host(`www.zlx2.com`) && PathPrefix(`/`)
+      priority: 100
+      middlewares: [canonical-domain]
+      service: portal
+    redirect:
+      entryPoints: [web]
+      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/`)
+      priority: 10
+      middlewares: [https-redirect]
+      service: portal
+    redirect-www-https:
+      entryPoints: [websecure]
+      rule: Host(`www.zlx2.com`) && PathPrefix(`/`)
+      priority: 1000
+      middlewares: [canonical-domain]
+      service: portal
+      tls: {}
+    iam:
+      entryPoints: [websecure]
+      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/api/iam/`)
+      priority: 500
+      middlewares: [strip-iam, security, compress]
+      service: iam
+      tls: {}
+    control:
+      entryPoints: [websecure]
+      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/api/control/`)
+      priority: 400
+      middlewares: [control-audience, control-auth, strip-control, security, compress]
+      service: control
+      tls: {}
+    drop:
+      entryPoints: [websecure]
+      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && (Path(`/drop`) || PathPrefix(`/drop/`))
+      priority: 400
+      middlewares: [drop-audience, drop-auth, strip-drop, security, compress]
+      service: drop
+      tls: {}
+    portal:
+      entryPoints: [websecure]
+      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/`)
+      priority: 1
+      middlewares: [security, compress]
+      service: portal
+      tls: {}
+    dashboard:
+      entryPoints: [admin]
+      rule: PathPrefix(`/api`) || PathPrefix(`/dashboard`)
+      service: api@internal
+
+  middlewares:
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    canonical-domain:
+      redirectRegex:
+        regex: ^https?://www\.zlx2\.com/(.*)
+        replacement: https://zlx2.com/${1}
+        permanent: true
+    strip-iam:
+      stripPrefix:
+        prefixes: [/api/iam]
+    strip-control:
+      stripPrefix:
+        prefixes: [/api/control]
+    strip-drop:
+      stripPrefix:
+        prefixes: [/drop]
+    control-audience:
+      headers:
+        customRequestHeaders:
+          Authorization: ""
+          X-HomeHub-Audience: homehub-control
+    drop-audience:
+      headers:
+        customRequestHeaders:
+          Authorization: ""
+          X-HomeHub-Audience: homehub-drop
+    control-auth:
+      forwardAuth:
+        address: http://iam:8080/v1/edge/authorize
+        trustForwardHeader: false
+        authResponseHeaders: [Authorization, X-HomeHub-Subject]
+    drop-auth:
+      forwardAuth:
+        address: http://iam:8080/v1/edge/authorize
+        trustForwardHeader: false
+        authResponseHeaders: [Authorization, X-HomeHub-Subject]
+    security:
+      headers:
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+        stsSeconds: 31536000
+        customResponseHeaders:
+          Server: ""
+          Content-Security-Policy: "default-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    compress:
+      compress: {}
+
+  services:
+    acme:
+      loadBalancer:
+        servers: [{url: http://acme-challenge:8080}]
+    iam:
+      loadBalancer:
+        servers: [{url: http://iam:8080}]
+    control:
+      loadBalancer:
+        servers: [{url: http://control:8080}]
+    drop:
+      loadBalancer:
+        servers: [{url: http://drop:8080}]
+    portal:
+      loadBalancer:
+        servers: [{url: http://portal:8080}]

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
+	"gitee.com/zlx23/homehub/apps/iam/internal/humanauth"
 	"gitee.com/zlx23/homehub/apps/iam/internal/machineadmin"
 	"homehub.local/go-sdk/identity"
 )
@@ -29,27 +30,37 @@ type MachineAdministrator interface {
 }
 
 type Server struct {
-	version   string
-	readiness func(context.Context) error
-	jwkSet    any
-	exchanger *exchange.Service
-	verifier  TokenVerifier
-	machines  MachineAdministrator
+	version       string
+	readiness     func(context.Context) error
+	jwkSet        any
+	exchanger     *exchange.Service
+	verifier      TokenVerifier
+	machines      MachineAdministrator
+	humans        *humanauth.Service
+	origins       map[string]struct{}
+	secureCookies bool
 }
 
 type Options struct {
-	Version   string
-	Readiness func(context.Context) error
-	JWKSet    any
-	Exchanger *exchange.Service
-	Verifier  TokenVerifier
-	Machines  MachineAdministrator
+	Version        string
+	Readiness      func(context.Context) error
+	JWKSet         any
+	Exchanger      *exchange.Service
+	Verifier       TokenVerifier
+	Machines       MachineAdministrator
+	Humans         *humanauth.Service
+	AllowedOrigins []string
+	SecureCookies  bool
 }
 
 func New(options Options) http.Handler {
 	server := &Server{
 		version: options.Version, readiness: options.Readiness, jwkSet: options.JWKSet, exchanger: options.Exchanger,
 		verifier: options.Verifier, machines: options.Machines,
+		humans: options.Humans, origins: make(map[string]struct{}, len(options.AllowedOrigins)), secureCookies: options.SecureCookies,
+	}
+	for _, origin := range options.AllowedOrigins {
+		server.origins[origin] = struct{}{}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", server.health)
@@ -57,6 +68,23 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("GET /v1/metadata", server.metadata)
 	mux.HandleFunc("GET /.well-known/jwks.json", server.jwks)
 	mux.HandleFunc("POST /v1/tokens/exchange", server.exchangeToken)
+	mux.HandleFunc("GET /v1/session", server.session)
+	mux.HandleFunc("POST /v1/setup/begin", server.beginSetup)
+	mux.HandleFunc("POST /v1/setup/confirm", server.confirmSetup)
+	mux.HandleFunc("POST /v1/login", server.login)
+	mux.HandleFunc("POST /v1/passkeys/login/begin", server.beginPasskeyLogin)
+	mux.HandleFunc("POST /v1/passkeys/login/finish", server.finishPasskeyLogin)
+	mux.HandleFunc("POST /v1/passkeys/registration/begin", server.beginPasskeyRegistration)
+	mux.HandleFunc("POST /v1/passkeys/registration/finish", server.finishPasskeyRegistration)
+	mux.HandleFunc("GET /v1/passkeys", server.listPasskeys)
+	mux.HandleFunc("DELETE /v1/passkeys/{id}", server.deletePasskey)
+	mux.HandleFunc("POST /v1/logout", server.logout)
+	mux.HandleFunc("POST /v1/session/tokens", server.sessionToken)
+	mux.HandleFunc("/v1/edge/authorize", server.edgeAuthorize)
+	mux.HandleFunc("GET /v1/shares", server.listShares)
+	mux.HandleFunc("POST /v1/shares", server.createShare)
+	mux.HandleFunc("DELETE /v1/shares/{id}", server.revokeShare)
+	mux.HandleFunc("POST /v1/shares/redeem", server.redeemShare)
 	mux.Handle("POST /v1/machine-identities", server.authenticate([]string{principalManagePermission, grantManagePermission}, http.HandlerFunc(server.createMachineIdentity)))
 	return server.middleware(mux)
 }
