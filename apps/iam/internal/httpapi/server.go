@@ -1,23 +1,43 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 type Server struct {
-	version string
+	version   string
+	readiness func(context.Context) error
 }
 
-func New(version string) http.Handler {
-	server := &Server{version: version}
+type Options struct {
+	Version   string
+	Readiness func(context.Context) error
+}
+
+func New(options Options) http.Handler {
+	server := &Server{version: options.Version, readiness: options.Readiness}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", server.health)
-	mux.HandleFunc("GET /health/ready", server.health)
+	mux.HandleFunc("GET /health/ready", server.ready)
 	mux.HandleFunc("GET /v1/metadata", server.metadata)
 	return server.middleware(mux)
+}
+
+func (server *Server) ready(response http.ResponseWriter, request *http.Request) {
+	if server.readiness != nil {
+		ctx, cancel := context.WithTimeout(request.Context(), time.Second)
+		defer cancel()
+		if err := server.readiness(ctx); err != nil {
+			writeJSON(response, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
+	}
+	server.health(response, request)
 }
 
 func (server *Server) health(response http.ResponseWriter, _ *http.Request) {

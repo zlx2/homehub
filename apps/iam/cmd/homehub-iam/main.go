@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
+	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 )
 
 var version = "dev"
@@ -25,10 +27,30 @@ func main() {
 	if address == "" {
 		address = ":8080"
 	}
+	databaseURL, err := databaseURLFromEnvironment()
+	if err != nil {
+		slog.Error("IAM database configuration is invalid", "error", err)
+		os.Exit(1)
+	}
+
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	store, err := storepostgres.Open(startupCtx, databaseURL)
+	if err == nil {
+		err = store.Migrate(startupCtx)
+	}
+	startupCancel()
+	if err != nil {
+		slog.Error("IAM database initialization failed", "error", err)
+		os.Exit(1)
+	}
+	defer store.Close()
 
 	server := &http.Server{
-		Addr:              address,
-		Handler:           httpapi.New(version),
+		Addr: address,
+		Handler: httpapi.New(httpapi.Options{
+			Version:   version,
+			Readiness: store.Ping,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -52,6 +74,23 @@ func main() {
 		slog.Error("HomeHub IAM stopped unexpectedly", "error", err)
 		os.Exit(1)
 	}
+}
+
+func databaseURLFromEnvironment() (string, error) {
+	if path := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL_FILE")); path != "" {
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		if value := strings.TrimSpace(string(contents)); value != "" {
+			return value, nil
+		}
+		return "", errors.New("IAM database URL file is empty")
+	}
+	if value := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL")); value != "" {
+		return value, nil
+	}
+	return "", errors.New("HOMEHUB_IAM_DATABASE_URL_FILE or HOMEHUB_IAM_DATABASE_URL is required")
 }
 
 func healthcheck() {

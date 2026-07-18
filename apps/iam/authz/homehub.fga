@@ -1,0 +1,51 @@
+model
+  schema 1.1
+
+type human
+
+type guest
+
+type device
+  relations
+    define owner: [human]
+
+type node
+  relations
+    define owner: [human]
+    define operator: [human, agent, group#member]
+
+type workload
+  relations
+    define owner: [human]
+    define runs_on: [node]
+
+type agent
+  relations
+    define owner: [human]
+
+type group
+  relations
+    define member: [human, guest, device, workload, agent, group#member]
+
+type realm
+  relations
+    define owner: [human]
+    define root: [human, agent]
+    define administrator: [human, agent, group#member] or root
+    define member: [human, guest, device, workload, agent, group#member] or administrator
+
+type service
+  relations
+    define realm: [realm]
+    define administrator: [human, agent, workload, group#member] or administrator from realm
+    define editor: [human, guest, device, agent, workload, group#member] or administrator
+    define viewer: [human, guest, device, agent, workload, group#member] or editor
+    define caller: [workload, agent, device, group#member] or administrator
+
+type resource
+  relations
+    define service: [service]
+    define owner: [human, agent, workload]
+    define editor: [human, guest, agent, workload, group#member] or owner or editor from service
+    define viewer: [human, guest, device, agent, workload, group#member] or editor or viewer from service
+    define manager: owner or administrator from service
