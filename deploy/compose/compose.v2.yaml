@@ -198,6 +198,52 @@ services:
     cap_drop:
       - ALL
 
+  telegram-bridge:
+    image: homehub/telegram-bridge:v2-local
+    build:
+      context: ../..
+      dockerfile: services/telegram-bridge/Dockerfile
+      network: host
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      iam:
+        condition: service_healthy
+      drop:
+        condition: service_healthy
+    environment:
+      TELEGRAM_BRIDGE_LISTEN_ADDRESS: 127.0.0.1:8730
+      TELEGRAM_BRIDGE_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
+      TELEGRAM_BRIDGE_IAM_CREDENTIAL_FILE: /run/secrets/iam_machine_credential
+      TELEGRAM_BRIDGE_IAM_BASE_URL: http://127.0.0.1:18100
+      TELEGRAM_BRIDGE_DROP_BASE_URL: http://127.0.0.1:18120
+      TELEGRAM_BRIDGE_ALLOWED_USER_IDS: ${TELEGRAM_BRIDGE_ALLOWED_USER_IDS:-}
+      TELEGRAM_BRIDGE_ALLOWED_CHAT_IDS: ${TELEGRAM_BRIDGE_ALLOWED_CHAT_IDS:-}
+      TELEGRAM_BRIDGE_TTL_DAYS: ${TELEGRAM_BRIDGE_TTL_DAYS:-1}
+      TELEGRAM_BRIDGE_ACK_MODE: ${TELEGRAM_BRIDGE_ACK_MODE:-private}
+      HTTP_PROXY: http://127.0.0.1:1081
+      HTTPS_PROXY: http://127.0.0.1:1081
+      NO_PROXY: localhost,127.0.0.1
+      http_proxy: http://127.0.0.1:1081
+      https_proxy: http://127.0.0.1:1081
+      no_proxy: localhost,127.0.0.1
+    read_only: true
+    volumes:
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/telegram_bot_token:/run/secrets/telegram_bot_token:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/telegram_bridge_credential:/run/secrets/iam_machine_credential:ro
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test: ["CMD", "/telegram-bridge", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   portal:
     image: homehub/portal:v2-local
     build:

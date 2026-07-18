@@ -10,9 +10,19 @@ import (
 	"time"
 )
 
+type staticTokens struct {
+	token string
+	calls int
+}
+
+func (source *staticTokens) Token(context.Context) (string, error) {
+	source.calls++
+	return source.token, nil
+}
+
 func TestCreateStreamsAuthenticatedMultipart(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/items" || request.Method != http.MethodPost {
+		if request.URL.Path != "/v1/items" || request.Method != http.MethodPost {
 			t.Fatalf("request = %s %s", request.Method, request.URL.Path)
 		}
 		if request.Header.Get("Authorization") != "Bearer drop-secret" {
@@ -46,12 +56,13 @@ func TestCreateStreamsAuthenticatedMultipart(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "drop-secret", 5*time.Second)
+	tokens := &staticTokens{token: "drop-secret"}
+	client := NewClient(server.URL, tokens, 5*time.Second)
 	item, err := client.Create(context.Background(), CreateInput{
 		Text: "hello", TTL: 3, IdempotencyKey: "telegram:123:456:789",
 		Attachment: &Attachment{Name: "image.png", ContentType: "image/png", Reader: strings.NewReader("original-bytes")},
 	})
-	if err != nil || item.ID != "drop-item" {
+	if err != nil || item.ID != "drop-item" || tokens.calls != 1 {
 		t.Fatalf("item=%#v err=%v", item, err)
 	}
 }
@@ -61,7 +72,7 @@ func TestCreateReturnsDropError(t *testing.T) {
 		http.Error(writer, `{"error":{"code":"denied"}}`, http.StatusForbidden)
 	}))
 	defer server.Close()
-	client := NewClient(server.URL, "secret", time.Second)
+	client := NewClient(server.URL, &staticTokens{token: "secret"}, time.Second)
 	_, err := client.Create(context.Background(), CreateInput{Text: "x", TTL: 1, IdempotencyKey: "1234567890123456"})
 	if err == nil || !strings.Contains(err.Error(), "HTTP 403") {
 		t.Fatalf("error = %v", err)

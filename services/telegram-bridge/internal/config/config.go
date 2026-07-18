@@ -12,8 +12,9 @@ type Config struct {
 	ListenAddress       string
 	TelegramAPIBaseURL  string
 	TelegramToken       string
+	IAMBaseURL          string
+	IAMCredential       string
 	DropBaseURL         string
-	DropToken           string
 	AllowedUserIDs      map[int64]struct{}
 	AllowedChatIDs      map[int64]struct{}
 	TTL                 int
@@ -28,9 +29,9 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("load Telegram bot token: %w", err)
 	}
-	dropToken, err := readSecret(env("TELEGRAM_BRIDGE_DROP_TOKEN_FILE", "/run/secrets/telegram_drop_token"))
+	iamCredential, err := readSecret(env("TELEGRAM_BRIDGE_IAM_CREDENTIAL_FILE", "/run/secrets/iam_machine_credential"))
 	if err != nil {
-		return Config{}, fmt.Errorf("load Drop token: %w", err)
+		return Config{}, fmt.Errorf("load IAM machine credential: %w", err)
 	}
 	allowedUsers, err := parseIDs(os.Getenv("TELEGRAM_BRIDGE_ALLOWED_USER_IDS"))
 	if err != nil {
@@ -52,8 +53,9 @@ func Load() (Config, error) {
 		ListenAddress:       env("TELEGRAM_BRIDGE_LISTEN_ADDRESS", "127.0.0.1:8730"),
 		TelegramAPIBaseURL:  strings.TrimRight(env("TELEGRAM_BRIDGE_API_BASE_URL", "https://api.telegram.org"), "/"),
 		TelegramToken:       telegramToken,
-		DropBaseURL:         strings.TrimRight(env("TELEGRAM_BRIDGE_DROP_BASE_URL", "https://111.229.205.99/drop"), "/"),
-		DropToken:           dropToken,
+		IAMBaseURL:          strings.TrimRight(env("TELEGRAM_BRIDGE_IAM_BASE_URL", "http://127.0.0.1:18100"), "/"),
+		IAMCredential:       iamCredential,
+		DropBaseURL:         strings.TrimRight(env("TELEGRAM_BRIDGE_DROP_BASE_URL", "http://127.0.0.1:18120"), "/"),
 		AllowedUserIDs:      allowedUsers,
 		AllowedChatIDs:      allowedChats,
 		TTL:                 ttl,

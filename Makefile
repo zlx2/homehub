@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-drop-integration test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-drop-integration test-telegram-bridge test-telegram-bridge-integration test-ai-gateway test-hermes-terminal format-iam format-control format-drop format-telegram-bridge install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -19,7 +19,7 @@ status: ## Show repository status
 v2-config: ## Validate the V2 development Compose configuration
 	@docker compose $(V2_COMPOSE_ARGS) config --quiet
 
-v2-up: ## Build and start the V2 IAM, Control, Drop, OpenFGA, PostgreSQL, and React portal
+v2-up: ## Build and start the V2 control plane, Drop, Telegram Bridge, and React portal
 	@docker compose $(V2_COMPOSE_ARGS) up -d --build --wait --wait-timeout 90
 
 v2-check: ## Check the running V2 IAM, Control, Drop, and portal
@@ -28,13 +28,14 @@ v2-check: ## Check the running V2 IAM, Control, Drop, and portal
 	@curl --fail --silent http://127.0.0.1:18100/.well-known/jwks.json >/dev/null
 	@curl --fail --silent http://127.0.0.1:18110/health/ready >/dev/null
 	@curl --fail --silent http://127.0.0.1:18120/health/ready >/dev/null
+	@curl --fail --silent http://127.0.0.1:8730/health/ready >/dev/null
 	@curl --fail --silent http://127.0.0.1:18080/health >/dev/null
 
 v2-down: ## Stop the V2 development stack without deleting test data
 	@docker compose $(V2_COMPOSE_ARGS) down
 
 v2-logs: ## Follow V2 development logs
-	@docker compose $(V2_COMPOSE_ARGS) logs -f iam control drop openfga postgres portal
+	@docker compose $(V2_COMPOSE_ARGS) logs -f iam control drop telegram-bridge openfga postgres portal
 
 compose-config: ## Validate the development Compose configuration
 	@docker compose $(COMPOSE_ARGS) config --quiet
@@ -100,6 +101,22 @@ test-drop-integration: ## Upload, read, and delete an original file through live
 test-telegram-bridge: ## Run Telegram Bridge tests with the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \
 		-v "$(CURDIR)/services/telegram-bridge:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
+
+test-telegram-bridge-integration: ## Verify the live Telegram workload can create but not read Drop items
+	@docker run --rm --network host --user 65532:65532 \
+		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
+		-e HOMEHUB_IAM_INTEGRATION_URL=http://127.0.0.1:18100 \
+		-e HOMEHUB_DROP_INTEGRATION_URL=http://127.0.0.1:18120 \
+		-e HOMEHUB_TELEGRAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/telegram_bridge_credential \
+		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
+		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+		-v "$(CURDIR):/repo" \
+		-v /srv/homehub-v2/runtime/telegram_bridge_credential:/run/secrets/telegram_bridge_credential:ro \
+		-v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-w /repo/services/telegram-bridge golang:1.26.5-alpine3.24 go test -count=1 -run TestLiveBridgeIdentityCreatesButCannotReadDrop ./integration
+
+format-telegram-bridge: ## Format Telegram Bridge Go source
+	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/telegram-bridge:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./integration ./internal
 
 test-ai-gateway: ## Run AI Gateway tests in the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \

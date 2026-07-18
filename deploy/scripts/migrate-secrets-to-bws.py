@@ -11,17 +11,22 @@ import sys
 
 
 BWS = "/usr/local/bin/bws"
-TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/run/homehub-bws/access-token"))
+TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/etc/homehub/bws-access-token"))
 PROJECT_NAME = os.environ.get("HOMEHUB_BWS_PROJECT", "HomeHub Production")
 SECRETS_DIR = Path(os.environ.get("HOMEHUB_SECRETS_DIR", "/srv/homehub/runtime/secrets"))
+V2_RUNTIME_DIR = Path(os.environ.get("HOMEHUB_V2_RUNTIME_DIR", "/srv/homehub-v2/runtime"))
 
 SOURCE_FILES = {
-    "postgres_superuser_password": "postgres_superuser_password",
-    "control_db_password": "control_db_password_control",
-    "auth_encryption_key": "auth_encryption_key",
-    "owner_setup_token": "owner_setup_token",
-    "beszel_agent_key": "beszel_agent_key",
-    "drop_identity_key": "identity_signing_key_control",
+    "postgres_superuser_password": SECRETS_DIR / "postgres_superuser_password",
+    "control_db_password": SECRETS_DIR / "control_db_password_control",
+    "auth_encryption_key": SECRETS_DIR / "auth_encryption_key",
+    "owner_setup_token": SECRETS_DIR / "owner_setup_token",
+    "beszel_agent_key": SECRETS_DIR / "beszel_agent_key",
+    "drop_identity_key": SECRETS_DIR / "identity_signing_key_control",
+}
+
+OPTIONAL_SOURCE_FILES = {
+    "telegram_bridge_credential": V2_RUNTIME_DIR / "telegram_bridge_credential",
 }
 
 
@@ -83,9 +88,10 @@ def main() -> None:
     ).read_bytes():
         fail("Control database password copies do not match")
     source_values: dict[str, str] = {}
-    for key, filename in SOURCE_FILES.items():
+    source_files = SOURCE_FILES | {key: path for key, path in OPTIONAL_SOURCE_FILES.items() if path.is_file()}
+    for key, path in source_files.items():
         try:
-            value = (SECRETS_DIR / filename).read_text(encoding="utf-8")
+            value = path.read_text(encoding="utf-8")
         except OSError:
             fail(f"source file for {key} is unavailable")
         if not value:
@@ -96,7 +102,7 @@ def main() -> None:
     by_key: dict[str, dict[str, object]] = {}
     for secret in existing:
         key = secret.get("key")
-        if isinstance(key, str) and key in SOURCE_FILES:
+        if isinstance(key, str) and key in source_values:
             if key in by_key:
                 fail(f"duplicate Bitwarden secret key: {key}")
             by_key[key] = secret

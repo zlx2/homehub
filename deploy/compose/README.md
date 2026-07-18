@@ -52,6 +52,12 @@ file. It creates separate copies where Control, PostgreSQL, and Drop require
 different Unix ownership. Do not place the BWS access token in `.env`, shell
 history, Compose configuration, or Git.
 
+`make bws-migrate` performs writes and therefore requires a temporary
+project-scoped machine token with create/edit permission. The normal server
+token should remain read-only. The migration command also picks up the V2
+Telegram workload credential directly from its restricted runtime file, so its
+value never needs to pass through a terminal or chat.
+
 The V2 development stack currently shares one `drop_db_password` file between
 PostgreSQL initialization and Drop. The PostgreSQL image drops supplementary
 groups before running initialization scripts, so the file must be owned by the
@@ -64,6 +70,12 @@ sudo chmod 0711 /srv/homehub-v2/runtime
 sudo chown 70:10001 /srv/homehub-v2/runtime/drop_db_password
 sudo chmod 0440 /srv/homehub-v2/runtime/drop_db_password
 ```
+
+When present in Bitwarden, `telegram_bot_token` and
+`telegram_bridge_credential` are also materialized into the V2 runtime
+directory with UID/GID `65532` and mode `0400`. Telegram Bridge receives only
+those two files; its IAM credential can exchange solely for
+`drop.item.create`.
 
 AI Gateway additionally requires `ai_deepseek_api_key` and
 `ai_opencode_go_api_key` in the same Bitwarden project. These values are mounted

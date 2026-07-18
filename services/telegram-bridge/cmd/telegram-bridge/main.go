@@ -15,6 +15,7 @@ import (
 	"homehub.local/services/telegram-bridge/internal/bridge"
 	"homehub.local/services/telegram-bridge/internal/config"
 	"homehub.local/services/telegram-bridge/internal/drop"
+	"homehub.local/services/telegram-bridge/internal/iam"
 	"homehub.local/services/telegram-bridge/internal/telegram"
 )
 
@@ -42,7 +43,8 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	telegramClient := telegram.NewClient(cfg.TelegramAPIBaseURL, cfg.TelegramToken, 2*time.Minute)
-	dropClient := drop.NewClient(cfg.DropBaseURL, cfg.DropToken, cfg.RequestTimeout)
+	tokenSource := iam.NewClient(cfg.IAMBaseURL, cfg.IAMCredential, 10*time.Second)
+	dropClient := drop.NewClient(cfg.DropBaseURL, tokenSource, cfg.RequestTimeout)
 	worker := bridge.New(cfg, telegramClient, dropClient, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

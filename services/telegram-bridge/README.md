@@ -4,6 +4,11 @@ Telegram Bridge is an internal HomeHub worker that forwards allowed Telegram
 private or group messages to Drop. It uses Bot API long polling, so no public
 webhook route or additional public port is required.
 
+The worker owns a HomeHub `workload` identity with only Drop's `caller`
+relationship. It exchanges that machine credential with IAM for a two-minute,
+audience-bound `drop.item.create` access token and caches it briefly. It cannot
+list, read, or delete Drop items and stores no permanent Drop token.
+
 ## Behavior
 
 - Text and captions become Drop text.
@@ -28,10 +33,11 @@ Create these values in the `HomeHub Production` Bitwarden Secrets Manager projec
 | BWS key | Value |
 | --- | --- |
 | `telegram_bot_token` | Token issued by `@BotFather` |
-| `telegram_drop_token` | HomeHub API token with only `drop.upload` scope |
+| `telegram_bridge_credential` | Credential issued once by HomeHub IAM for the Telegram workload |
 
-Run `make secrets-sync` after both values exist. Never put either token in Compose,
-`.env`, logs, Git, or chat messages.
+Never put either credential in Compose, `.env`, logs, Git, or chat messages. The
+machine credential is not an access token: IAM validates it and issues a short-
+lived token for each active upload window.
 
 ## Allowlist and group setup
 
@@ -49,17 +55,15 @@ values from `deploy/compose/.env.example`.
 ## Development
 
 ```bash
-cd /home/ubuntu/homehub/services/telegram-bridge
+cd /home/ubuntu/homehub-v2/services/telegram-bridge
 go test ./...
 
-cd /home/ubuntu/homehub
-docker compose \
-  --env-file deploy/compose/.env.example \
-  -f deploy/compose/compose.yaml \
-  -f services/telegram-bridge/compose.homehub.yaml \
-  up -d --build --wait telegram-bridge
+cd /home/ubuntu/homehub-v2
+make v2-up
+make test-telegram-bridge-integration
 ```
 
 The container uses host networking only to reach the loopback Mihomo proxy on
-`127.0.0.1:1081`. Its health server binds only `127.0.0.1:8730`; it does not
-register a Traefik route.
+`127.0.0.1:1081`. IAM and Drop are also reached only through their loopback V2
+ports. The health server binds only `127.0.0.1:8730`; it does not register a
+Traefik route.

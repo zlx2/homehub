@@ -16,8 +16,12 @@ import (
 
 type Client struct {
 	baseURL string
-	token   string
+	tokens  TokenSource
 	http    *http.Client
+}
+
+type TokenSource interface {
+	Token(context.Context) (string, error)
 }
 
 type Attachment struct {
@@ -37,15 +41,19 @@ type Item struct {
 	ID string `json:"id"`
 }
 
-func NewClient(baseURL, token string, timeout time.Duration) *Client {
+func NewClient(baseURL string, tokens TokenSource, timeout time.Duration) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    &http.Client{Timeout: timeout},
+		tokens:  tokens,
+		http:    &http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: nil}},
 	}
 }
 
 func (c *Client) Create(ctx context.Context, input CreateInput) (Item, error) {
+	token, err := c.tokens.Token(ctx)
+	if err != nil {
+		return Item{}, fmt.Errorf("authorize Drop upload: %w", err)
+	}
 	reader, writer := io.Pipe()
 	multipartWriter := multipart.NewWriter(writer)
 	writeResult := make(chan error, 1)
@@ -58,13 +66,13 @@ func (c *Client) Create(ctx context.Context, input CreateInput) (Item, error) {
 		writeResult <- err
 	}()
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/items", reader)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/items", reader)
 	if err != nil {
 		_ = reader.CloseWithError(err)
 		<-writeResult
 		return Item{}, fmt.Errorf("build Drop request: %w", err)
 	}
-	request.Header.Set("Authorization", "Bearer "+c.token)
+	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Idempotency-Key", input.IdempotencyKey)
 	request.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 	response, requestErr := c.http.Do(request)
