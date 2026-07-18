@@ -1,5 +1,20 @@
 # Network model
 
+## Public domain edge
+
+`zlx2.com` and `www.zlx2.com` are proxied through a remotely managed
+Cloudflare Tunnel. The `cloudflared` connector joins `homehub-v2-edge`, opens
+no host port, and forwards both hostnames to `https://traefik:443`.
+
+The Tunnel route must keep TLS verification enabled and set **Origin Server
+Name** to `zlx2.com`. Traefik presents the public domain certificate, routes
+the request by its original Host header, and redirects `www.zlx2.com` to the
+canonical apex domain.
+
+The connector token is stored in Bitwarden Secrets Manager as
+`cloudflare_tunnel_token` and materialized read-only at runtime. It must never
+be stored in Compose, an environment file, or the repository.
+
 ## `homehub-edge`
 
 Traefik and HTTP services explicitly published through Traefik join this network.

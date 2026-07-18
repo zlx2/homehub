@@ -45,6 +45,7 @@ V2_OPTIONAL_TARGETS = {
     "owner_setup_token": [("owner_setup_token", 65532, 65532)],
     "telegram_bot_token": [("telegram_bot_token", 65532, 65532)],
     "telegram_bridge_credential": [("telegram_bridge_credential", 65532, 65532)],
+    "cloudflare_tunnel_token": [("cloudflare_tunnel_token", 65532, 65532)],
 }
 
 IDENTITY_SECRET_KEY = "drop_identity_key"
