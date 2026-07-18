@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { Check, ChevronRight, Clipboard, FileText, Gauge, HardDriveUpload, KeyRound, LogOut, Menu, Plus, Server, Share2, Trash2, Upload, X } from 'lucide-react';
+import { Check, ChevronRight, Clipboard, FileText, Gauge, HardDriveUpload, KeyRound, LogOut, Menu, Plus, Share2, Trash2, Upload, X } from 'lucide-react';
 import { drop, iam, type DropItem, type PasskeyCredential, type SessionState } from './api';
+import { DashboardHome } from './DashboardHome';
 import './security.css';
 
 function message(error: unknown) {
@@ -75,12 +76,6 @@ function Layout({ state, path, navigate, logout, children }: { state: SessionSta
   </div>;
 }
 
-function Overview({ name }: { name: string }) {
-  const [data, setData] = useState<any>();
-  useEffect(() => { fetch('/api/control/v1/overview').then((r) => r.ok ? r.json() : Promise.reject()).then(setData).catch(() => setData({ summary: { total_services: 0, healthy_services: 0 }, services: [] })); }, []);
-  return <div className="content-wrap"><section className="hero"><div><span className="eyebrow">HOMEHUB V2</span><h1>你好，{name}</h1><p>一个入口，连接你的服务、设备与 Agent。</p></div></section><div className="stats"><article><span>服务</span><strong>{data?.summary?.total_services ?? '—'}</strong></article><article><span>健康</span><strong className="good">{data?.summary?.healthy_services ?? '—'}</strong></article><article><span>架构</span><strong>V2</strong></article></div><section className="section"><div className="section-heading"><div><span className="eyebrow">SERVICES</span><h2>服务状态</h2></div></div><div className="service-list">{(data?.services ?? []).map((service: any) => <article key={service.id}><span className={`service-icon ${service.status.state}`}><Server size={19}/></span><div><strong>{service.name}</strong><small>{service.description}</small></div><span className={`health ${service.status.state}`}>{service.status.state === 'healthy' ? '正常' : '不可用'}</span></article>)}</div></section></div>;
-}
-
 function Drop() {
   const [items, setItems] = useState<DropItem[]>([]); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = () => drop.list().then((x) => setItems(x.items ?? [])).catch((e) => setError(message(e)));
@@ -126,5 +121,6 @@ export function App() {
   if (!state) return <div className="loading"><span className="brand-mark">H</span><i/></div>;
   if (!state.authenticated) return <><Auth state={state} reload={reload}/>{error && <div className="toast">{error}</div>}</>;
   const actualPath = !state.administrator && path !== '/drop' ? '/drop' : path;
-  return <Layout state={state} path={actualPath} navigate={navigate} logout={() => iam.logout().finally(reload)}>{actualPath === '/drop' ? <Drop/> : actualPath === '/shares' ? <Shares/> : actualPath === '/security' ? <Security/> : <Overview name={state.principal?.display_name ?? 'Luna'}/>}</Layout>;
+  if (state.administrator && actualPath === '/') return <DashboardHome name={state.principal?.display_name ?? 'Luna'} navigate={navigate}/>;
+  return <Layout state={state} path={actualPath} navigate={navigate} logout={() => iam.logout().finally(reload)}>{actualPath === '/drop' ? <Drop/> : actualPath === '/shares' ? <Shares/> : <Security/>}</Layout>;
 }
