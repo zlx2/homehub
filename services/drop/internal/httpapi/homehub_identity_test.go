@@ -61,6 +61,30 @@ func TestAuthenticateHomeHubRejectsMissingPortalScope(t *testing.T) {
 	}
 }
 
+func TestAuthenticateHomeHubMapsRootAgentToHermes(t *testing.T) {
+	publicKey, privateKey, _ := ed25519.GenerateKey(nil)
+	verifier, _ := identity.NewVerifier(publicKey, "drop")
+	api := &API{identity: verifier}
+	now := time.Now().UTC()
+	token := signHomeHubIdentity(t, privateKey, identity.Claims{
+		Issuer: identity.Issuer, Audience: "drop", Subject: "hermes", Name: "Hermes",
+		Scopes: []string{scopeAgentRoot}, IssuedAt: now.Unix(), Expires: now.Add(time.Minute).Unix(),
+	})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/items/example", nil)
+	request.Header.Set(identity.HeaderName, token)
+	response := httptest.NewRecorder()
+	api.authenticateHomeHub(requireOwner(func(writer http.ResponseWriter, request *http.Request) {
+		principal := principalFrom(request)
+		if principal.Role != RoleHermes || principal.Subject != "hermes" {
+			t.Fatalf("unexpected principal: %+v", principal)
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestAuthenticateHomeHubAllowsUploadTokenOnlyOnCreateItem(t *testing.T) {
 	publicKey, privateKey, _ := ed25519.GenerateKey(nil)
 	verifier, _ := identity.NewVerifier(publicKey, "drop")
@@ -101,6 +125,20 @@ func TestUploadTokenBypassesBrowserOriginCheckOnlyForUpload(t *testing.T) {
 	}))
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/items", nil)
 	request = withPrincipal(request, principal{Role: RoleGuest, Subject: "iphone", Scopes: []string{"drop.upload"}})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRootAgentBypassesBrowserOriginCheckForAllMutations(t *testing.T) {
+	api := &API{cfg: config.Config{AllowedOrigins: map[string]struct{}{}}}
+	handler := api.requireAllowedOrigin(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/items/example", nil)
+	request = withPrincipal(request, principal{Role: RoleHermes, Subject: "hermes", Scopes: []string{scopeAgentRoot}})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent {

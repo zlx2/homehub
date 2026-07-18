@@ -13,6 +13,9 @@ and authorization to HomeHub Control.
   signature, issuer, audience, expiry, issued time, and scopes.
 - Owner (`admin` scope): upload, list, download, change expiry, delete, and
   view storage status.
+- Hermes housekeeper (`agent.root` scope): full access to every Drop API. The
+  long-lived HomeHub token is validated by Control and exchanged for a
+  short-lived, Drop-audience internal identity with the `hermes` role.
 - Shared guest (`portal.view` scope): upload, list, and download. Owner-only
   operations return `403`.
 - Device automation (`drop.upload` scope): may only create an item through
@@ -21,8 +24,9 @@ and authorization to HomeHub Control.
 - Persistence: `/data/drop.db`, `/data/blobs`, and `/data/tmp`. SQLite is the
   durable metadata source; files are stored on the same service-owned volume.
 
-The former public authorization-code, Tailscale identity, and Hermes bearer
-listeners are not registered by the HomeHub runtime.
+The former public authorization-code, Tailscale identity, and Drop-specific
+Hermes bearer listeners are not registered by the HomeHub runtime. Hermes uses
+its single HomeHub-wide `agent.root` token instead.
 
 ## Toolchains
 

@@ -31,6 +31,10 @@ TARGETS = {
     "ai_opencode_go_api_key": [("ai_opencode_go_api_key", 65532, 65532)],
 }
 
+OPTIONAL_TARGETS = {
+    "hermes_root_token": [("hermes_root_token", 1000, 1001)],
+}
+
 IDENTITY_SECRET_KEY = "drop_identity_key"
 
 
@@ -95,10 +99,11 @@ def main() -> None:
     secrets = bws_json(["secret", "list", str(matches[0]["id"])], environment)
 
     required = set(TARGETS) | {IDENTITY_SECRET_KEY}
+    known = required | set(OPTIONAL_TARGETS)
     values: dict[str, str] = {}
     for secret in secrets:
         key = secret.get("key")
-        if isinstance(key, str) and key in required:
+        if isinstance(key, str) and key in known:
             if key in values:
                 fail(f"duplicate Bitwarden secret key: {key}")
             value = secret.get("value")
@@ -113,6 +118,12 @@ def main() -> None:
     os.chmod(SECRETS_DIR, 0o700)
     written = 0
     for key, targets in TARGETS.items():
+        for filename, uid, gid in targets:
+            atomic_write(SECRETS_DIR / filename, values[key], uid, gid)
+            written += 1
+    for key, targets in OPTIONAL_TARGETS.items():
+        if key not in values:
+            continue
         for filename, uid, gid in targets:
             atomic_write(SECRETS_DIR / filename, values[key], uid, gid)
             written += 1

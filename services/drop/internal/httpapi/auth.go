@@ -20,9 +20,10 @@ const (
 type Role string
 
 const (
-	RoleGuest  Role = "guest"
-	RoleOwner  Role = "owner"
-	RoleHermes Role = "hermes"
+	RoleGuest      Role = "guest"
+	RoleOwner      Role = "owner"
+	RoleHermes     Role = "hermes"
+	scopeAgentRoot      = "agent.root"
 )
 
 type principal struct {

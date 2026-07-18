@@ -28,6 +28,8 @@
 - Services must not trust identity headers supplied by clients.
 - HomeHub Control performs authentication and authorization.
 - Internal identity tokens must validate signature, issuer, audience, expiry, and scopes.
+- `agent.root` is the reserved Hermes housekeeper scope. Every registered service must accept it and map it to that service's highest permission level.
+- Hermes uses one non-interactive root API token at Control; Control must exchange it for short-lived, audience-bound internal identities before forwarding requests.
 - Databases must not be exposed publicly unless explicitly documented.
 - Existing public MySQL port 42061 and Redis port 38291 must remain available and will be hardened separately.
 - Never mount the unrestricted Docker socket into application containers.
@@ -41,6 +43,6 @@
 - Do not introduce Kubernetes, Nacos, a service mesh, or a message broker without an ADR.
 - Do not modify, stop, or recreate existing server containers without explicit approval.
 - Do not bind new development services to port 443 until the edge migration is approved.
-- The existing Nous Research Hermes Agent under `~/.hermes` is a separate system.
-- Do not read, modify, stop, or depend on Hermes Agent as part of HomeHub development.
-- Any future Hermes Agent integration requires a separate ADR and a least-privilege service identity.
+- The existing Nous Research Hermes Agent under `~/.hermes` remains a separately deployed runtime; HomeHub must not depend on its availability.
+- Hermes is HomeHub's trusted housekeeper and receives the reserved `agent.root` identity described in ADR 0010.
+- Do not read, modify, or stop Hermes internals unless the user explicitly requests an integration or Hermes maintenance task.

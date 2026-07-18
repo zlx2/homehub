@@ -35,6 +35,8 @@ func TestServiceAccessPolicy(t *testing.T) {
 		wantAllow bool
 	}{
 		{name: "admin owner service", scopes: []string{"portal.view", "admin"}, service: catalog.Service{Visibility: "owner"}, wantAllow: true},
+		{name: "root agent owner service", scopes: []string{auth.ScopeAgentRoot}, service: catalog.Service{Visibility: "owner"}, wantAllow: true},
+		{name: "root agent internal service", scopes: []string{auth.ScopeAgentRoot}, service: catalog.Service{Visibility: "internal"}, wantAllow: true},
 		{name: "friend owner service", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "owner"}, hasGrant: true, wantAllow: false},
 		{name: "friend shared with grant", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "shared", ShareEnabled: true}, hasGrant: true, wantAllow: true},
 		{name: "friend shared without grant", scopes: []string{"portal.view"}, service: catalog.Service{Visibility: "shared", ShareEnabled: true}, wantAllow: false},
@@ -52,7 +54,7 @@ func TestServiceAccessPolicy(t *testing.T) {
 
 func TestAPITokenOnlyAllowsDropCreateItem(t *testing.T) {
 	identity := auth.APITokenIdentity{
-		Principal: auth.Principal{Scopes: []string{"drop.upload"}},
+		Principal: auth.Principal{Scopes: []string{auth.ScopeDropUpload}},
 		ServiceID: "drop",
 	}
 	service := catalog.Service{ID: "drop"}
@@ -74,6 +76,43 @@ func TestAPITokenOnlyAllowsDropCreateItem(t *testing.T) {
 	}
 	if apiTokenRequestAllowed(identity, catalog.Service{ID: "chat"}, http.MethodPost, "/drop/api/v1/items") {
 		t.Fatal("token crossed service boundary")
+	}
+}
+
+func TestRootAgentTokenAllowsEveryRegisteredServiceRoute(t *testing.T) {
+	identity := auth.APITokenIdentity{
+		Principal: auth.Principal{Scopes: []string{auth.ScopeAgentRoot}},
+		ServiceID: auth.APITokenServiceAll,
+	}
+	for _, test := range []struct {
+		service catalog.Service
+		method  string
+		uri     string
+	}{
+		{service: catalog.Service{ID: "drop"}, method: http.MethodDelete, uri: "/drop/api/v1/items/abc"},
+		{service: catalog.Service{ID: "server-monitor"}, method: http.MethodGet, uri: "/server/api/systems"},
+		{service: catalog.Service{ID: "future-service"}, method: http.MethodPatch, uri: "/future-service/api/v1/config"},
+	} {
+		if !apiTokenRequestAllowed(identity, test.service, test.method, test.uri) {
+			t.Fatalf("root agent denied %s %s for %s", test.method, test.uri, test.service.ID)
+		}
+	}
+}
+
+func TestRootAgentBypassesHumanAdminChecks(t *testing.T) {
+	api := &server{}
+	principal := auth.Principal{ID: "hermes", Username: "hermes", Scopes: []string{auth.ScopeAgentRoot}}
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/invitations/example", nil)
+	request = request.WithContext(context.WithValue(request.Context(), principalContextKey{}, principal))
+	response := httptest.NewRecorder()
+	api.requireAdmin(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !api.validMutation(request) {
+			t.Fatal("root agent should not require Origin or CSRF")
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -12,6 +12,12 @@ import (
 
 const apiTokenPrefix = "hht_"
 
+const (
+	APITokenServiceAll = "homehub"
+	ScopeAgentRoot     = "agent.root"
+	ScopeDropUpload    = "drop.upload"
+)
+
 var (
 	ErrInvalidAPIToken  = errors.New("invalid API token specification")
 	ErrTooManyAPITokens = errors.New("too many active API tokens")
@@ -162,7 +168,9 @@ func validateAPITokenSpec(name, serviceID string, scopes []string, expiresAt, no
 	if len(name) < 1 || len(name) > 80 {
 		return fmt.Errorf("%w: token name must contain 1-80 characters", ErrInvalidAPIToken)
 	}
-	if serviceID != "drop" || len(scopes) != 1 || scopes[0] != "drop.upload" {
+	validPermission := len(scopes) == 1 && ((serviceID == "drop" && scopes[0] == ScopeDropUpload) ||
+		(serviceID == APITokenServiceAll && scopes[0] == ScopeAgentRoot))
+	if !validPermission {
 		return fmt.Errorf("%w: unsupported permission", ErrInvalidAPIToken)
 	}
 	if !expiresAt.After(now.Add(5 * time.Minute)) {

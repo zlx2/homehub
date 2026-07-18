@@ -79,10 +79,19 @@ func TestOpaqueTokensUseDifferentHashes(t *testing.T) {
 	}
 }
 
-func TestAPITokenSpecIsNarrowAndTimeBound(t *testing.T) {
+func TestAPITokenSpecSupportsDeviceAndRootAgentTokens(t *testing.T) {
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
-	if err := validateAPITokenSpec("iPhone", "drop", []string{"drop.upload"}, now.Add(365*24*time.Hour), now); err != nil {
-		t.Fatalf("valid token rejected: %v", err)
+	for _, valid := range []struct {
+		name      string
+		serviceID string
+		scopes    []string
+	}{
+		{name: "iPhone", serviceID: "drop", scopes: []string{ScopeDropUpload}},
+		{name: "Hermes", serviceID: APITokenServiceAll, scopes: []string{ScopeAgentRoot}},
+	} {
+		if err := validateAPITokenSpec(valid.name, valid.serviceID, valid.scopes, now.Add(365*24*time.Hour), now); err != nil {
+			t.Fatalf("valid %s token rejected: %v", valid.name, err)
+		}
 	}
 	for _, test := range []struct {
 		name      string
@@ -90,9 +99,11 @@ func TestAPITokenSpecIsNarrowAndTimeBound(t *testing.T) {
 		scopes    []string
 		expiresAt time.Time
 	}{
-		{name: "wrong service", serviceID: "rolechat", scopes: []string{"drop.upload"}, expiresAt: now.Add(time.Hour)},
+		{name: "wrong service", serviceID: "rolechat", scopes: []string{ScopeDropUpload}, expiresAt: now.Add(time.Hour)},
 		{name: "broad scope", serviceID: "drop", scopes: []string{"admin"}, expiresAt: now.Add(time.Hour)},
-		{name: "too long", serviceID: "drop", scopes: []string{"drop.upload"}, expiresAt: now.Add(367 * 24 * time.Hour)},
+		{name: "root bound to drop", serviceID: "drop", scopes: []string{ScopeAgentRoot}, expiresAt: now.Add(time.Hour)},
+		{name: "upload bound globally", serviceID: APITokenServiceAll, scopes: []string{ScopeDropUpload}, expiresAt: now.Add(time.Hour)},
+		{name: "too long", serviceID: "drop", scopes: []string{ScopeDropUpload}, expiresAt: now.Add(367 * 24 * time.Hour)},
 	} {
 		if err := validateAPITokenSpec(test.name, test.serviceID, test.scopes, test.expiresAt, now); err == nil {
 			t.Fatalf("%s should fail", test.name)

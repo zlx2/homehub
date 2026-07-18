@@ -236,10 +236,14 @@ func (api *server) serviceAllowed(ctx context.Context, principal auth.Principal,
 }
 
 func serviceAccessAllowed(principal auth.Principal, service catalog.Service, hasGrant bool) bool {
-	if auth.HasScope(principal, "admin") {
+	if hasAdminAccess(principal) {
 		return true
 	}
 	return service.Visibility == "shared" && service.ShareEnabled && hasGrant
+}
+
+func hasAdminAccess(principal auth.Principal) bool {
+	return auth.HasScope(principal, "admin") || auth.HasScope(principal, auth.ScopeAgentRoot)
 }
 
 func (api *server) beginSetup(writer http.ResponseWriter, request *http.Request) {
@@ -398,7 +402,7 @@ func (api *server) requireAuth(next http.Handler) http.Handler {
 func (api *server) requireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		principal, ok := request.Context().Value(principalContextKey{}).(auth.Principal)
-		if !ok || !auth.HasScope(principal, "admin") {
+		if !ok || !hasAdminAccess(principal) {
 			writeJSON(writer, http.StatusForbidden, map[string]string{"error": "admin_required"})
 			return
 		}
@@ -407,6 +411,18 @@ func (api *server) requireAdmin(next http.Handler) http.Handler {
 }
 
 func (api *server) authenticate(request *http.Request) (auth.Principal, error) {
+	header := strings.TrimSpace(request.Header.Get("Authorization"))
+	if header != "" {
+		const prefix = "Bearer "
+		if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+			return auth.Principal{}, auth.ErrInvalidCredentials
+		}
+		identity, err := api.auth.AuthenticateAPIToken(request.Context(), strings.TrimSpace(header[len(prefix):]))
+		if err != nil || identity.ServiceID != auth.APITokenServiceAll || !auth.HasScope(identity.Principal, auth.ScopeAgentRoot) {
+			return auth.Principal{}, auth.ErrInvalidCredentials
+		}
+		return identity.Principal, nil
+	}
 	return api.auth.Authenticate(request.Context(), api.sessionToken(request))
 }
 
@@ -428,7 +444,10 @@ func (api *server) authenticateForwardRequest(request *http.Request) (auth.Princ
 }
 
 func apiTokenRequestAllowed(identity auth.APITokenIdentity, service catalog.Service, method, rawURI string) bool {
-	if identity.ServiceID != service.ID || !auth.HasScope(identity.Principal, "drop.upload") {
+	if identity.ServiceID == auth.APITokenServiceAll && auth.HasScope(identity.Principal, auth.ScopeAgentRoot) {
+		return true
+	}
+	if identity.ServiceID != service.ID || !auth.HasScope(identity.Principal, auth.ScopeDropUpload) {
 		return false
 	}
 	if strings.ToUpper(strings.TrimSpace(method)) != http.MethodPost {
@@ -807,6 +826,9 @@ func (api *server) findService(id string) (catalog.Service, bool) {
 }
 
 func (api *server) validMutation(request *http.Request) bool {
+	if principal, ok := request.Context().Value(principalContextKey{}).(auth.Principal); ok && auth.HasScope(principal, auth.ScopeAgentRoot) {
+		return true
+	}
 	if !api.validOrigin(request) {
 		return false
 	}

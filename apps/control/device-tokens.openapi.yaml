@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: HomeHub Device Token Admin API
+  title: HomeHub Automation Token Admin API
   version: 1.0.0
-  description: Owner-only API for issuing and revoking narrowly scoped device automation tokens.
+  description: Owner-only API for issuing and revoking device tokens and the global Hermes housekeeper identity.
 servers:
   - url: /
 security:
@@ -10,12 +10,12 @@ security:
 paths:
   /api/v1/admin/api-tokens:
     get:
-      summary: List the owner's device tokens
+      summary: List the owner's automation tokens
       responses:
         "200":
           description: Token metadata; raw token values are never returned.
     post:
-      summary: Create a device token
+      summary: Create an automation token
       parameters:
         - $ref: "#/components/parameters/CSRFToken"
       requestBody:
@@ -27,17 +27,22 @@ paths:
               required: [name, service_id, scopes, expires_at]
               properties:
                 name: {type: string, minLength: 1, maxLength: 80}
-                service_id: {type: string, const: drop}
+                service_id: {type: string, enum: [drop, homehub]}
                 scopes:
-                  type: array
-                  prefixItems: [{const: drop.upload}]
-                  minItems: 1
-                  maxItems: 1
+                  oneOf:
+                    - type: array
+                      prefixItems: [{const: drop.upload}]
+                      minItems: 1
+                      maxItems: 1
+                    - type: array
+                      prefixItems: [{const: agent.root}]
+                      minItems: 1
+                      maxItems: 1
                 expires_at: {type: string, format: date-time}
       responses:
         "201":
           description: Created; the response contains the raw token exactly once.
-        "400": {description: Invalid scope or expiry}
+        "400": {description: Invalid service/scope pairing or expiry}
   /api/v1/admin/api-tokens/{id}:
     delete:
       summary: Revoke a device token

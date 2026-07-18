@@ -1,6 +1,6 @@
 # ADR 0002: Keep HomeHub independent from Hermes Agent
 
-- Status: Accepted
+- Status: Accepted; integration policy extended by ADR 0010
 - Date: 2026-07-17
 
 ## Context
@@ -17,8 +17,9 @@ gateway rather than an HTTP edge gateway for application services.
   service discovery, configuration, secret delivery, or runtime availability.
 - Hermes Agent remains on its existing localhost and Tailscale-facing paths.
 - HomeHub must not read or modify `~/.hermes`.
-- A future integration, if desired, treats Hermes Agent as an external client or
-  separately registered service with a least-privilege identity and explicit scopes.
+- ADR 0010 later designates Hermes as the trusted HomeHub housekeeper. Runtime
+  independence remains: HomeHub still does not depend on Hermes availability,
+  files, databases, or internal implementation.
 
 ## Consequences
 

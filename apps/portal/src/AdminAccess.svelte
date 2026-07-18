@@ -13,8 +13,10 @@
   let linkHours = '24';
   let shareLink = '';
   let apiToken = '';
+  let hermesToken = '';
   let tokenName = 'iPhone 快捷分享';
   let tokenDays = '365';
+  let hermesTokenDays = '365';
   let panelError = '';
   let notice = '';
   let loading = true;
@@ -127,6 +129,35 @@
     notice = 'iPhone 令牌已复制。';
   }
 
+  async function createHermesToken() {
+    submitting = true;
+    panelError = '';
+    notice = '';
+    hermesToken = '';
+    try {
+      const expiresAt = new Date(Date.now() + Number(hermesTokenDays) * 24 * 60 * 60 * 1000).toISOString();
+      const created = await api('/api/v1/admin/api-tokens', mutation('POST', {
+        name: 'Hermes 管家',
+        service_id: 'homehub',
+        scopes: ['agent.root'],
+        expires_at: expiresAt
+      }));
+      hermesToken = created.token;
+      notice = 'Hermes 管家令牌已生成。它拥有所有已注册服务的最高权限，只会显示这一次。';
+      await load();
+    } catch (cause) {
+      panelError = cause instanceof Error ? cause.message : '创建 Hermes 管家令牌失败';
+    } finally {
+      submitting = false;
+    }
+  }
+
+  async function copyHermesToken() {
+    if (!hermesToken) return;
+    await navigator.clipboard.writeText(hermesToken);
+    notice = 'Hermes 管家令牌已复制。';
+  }
+
   async function revokeApiToken(id: string) {
     submitting = true;
     panelError = '';
@@ -188,6 +219,15 @@
       </form>
       {#if apiToken}<div class="secret-result"><label>令牌只显示这一次<input value={apiToken} readonly /></label><button class="refresh" type="button" on:click={copyApiToken}>复制令牌</button></div>{/if}
     </article>
+    <article class="admin-card">
+      <p class="kicker">HERMES HOUSEKEEPER</p><h3>管家身份令牌</h3>
+      <p class="admin-copy">赋予 Hermes <code>agent.root</code> 身份。无需登录、TOTP、CSRF或浏览器 Cookie，可操作所有当前及未来注册的 HomeHub 服务。</p>
+      <form on:submit|preventDefault={createHermesToken}>
+        <label>有效期<select bind:value={hermesTokenDays}><option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option><option value="365">1 年</option></select></label>
+        <button class="primary compact" disabled={submitting}>{submitting ? '正在生成…' : '生成 Hermes 管家令牌'}</button>
+      </form>
+      {#if hermesToken}<div class="secret-result"><label>最高权限令牌只显示一次<input value={hermesToken} readonly /></label><button class="refresh" type="button" on:click={copyHermesToken}>复制令牌</button></div>{/if}
+    </article>
   </div>
 
   <div class="policy-lists">
@@ -198,7 +238,7 @@
     </article>
     <article class="policy-card"><div class="list-title"><h3>设备令牌</h3><span>{apiTokens.length}</span></div>
       {#if loading}<p class="empty-copy">正在读取…</p>
-      {:else if apiTokens.length}<div class="rows">{#each apiTokens as token}<div class="policy-row"><div><strong>{token.name}</strong><span>{token.last_used_at ? `最近使用 ${formatDate(token.last_used_at)}` : '尚未使用'} · 有效至 {formatDate(token.expires_at)}</span></div><button class="danger-button" type="button" disabled={submitting} on:click={() => revokeApiToken(token.id)}>吊销</button></div>{/each}</div>
+      {:else if apiTokens.length}<div class="rows">{#each apiTokens as token}<div class="policy-row"><div><strong>{token.name}</strong><span>{token.scopes.join('、')} · {token.last_used_at ? `最近使用 ${formatDate(token.last_used_at)}` : '尚未使用'} · 有效至 {formatDate(token.expires_at)}</span></div><button class="danger-button" type="button" disabled={submitting} on:click={() => revokeApiToken(token.id)}>吊销</button></div>{/each}</div>
       {:else}<p class="empty-copy">还没有设备令牌</p>{/if}
     </article>
   </div>

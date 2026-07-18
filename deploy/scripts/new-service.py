@@ -55,6 +55,8 @@ def common_files() -> dict[str, str]:
             Generated HomeHub service. Public traffic is authenticated by
             HomeHub Control, then this process independently verifies the
             service-bound Ed25519 identity before running business handlers.
+            The reserved `agent.root` scope is the Hermes housekeeper identity
+            and must map to the service's highest permission level.
         """,
         "openapi.yaml": """
             openapi: 3.1.0
@@ -173,7 +175,7 @@ def go_files() -> dict[str, str]:
                 root := http.NewServeMux()
                 root.HandleFunc("GET /health/live", noContent)
                 root.HandleFunc("GET /health/ready", noContent)
-                root.Handle("/", verifier.Authenticate([]string{"portal.view", "admin"}, protected))
+                root.Handle("/", verifier.Authenticate([]string{"portal.view", "admin", "agent.root"}, protected))
                 handler := httpx.RequestID(httpx.Recover(logger, httpx.SecurityHeaders(root)))
                 server := &http.Server{
                     Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
@@ -281,7 +283,7 @@ def rust_files() -> dict[str, str]:
             ) -> Result<Response, StatusCode> {
                 let token = headers.get(HEADER_NAME).and_then(|value| value.to_str().ok()).unwrap_or("");
                 let claims = verifier.verify(token).map_err(|_| StatusCode::UNAUTHORIZED)?;
-                if !claims.has_any_scope(&["portal.view", "admin"]) { return Err(StatusCode::FORBIDDEN); }
+                if !claims.has_any_scope(&["portal.view", "admin", "agent.root"]) { return Err(StatusCode::FORBIDDEN); }
                 request.extensions_mut().insert(claims);
                 Ok(next.run(request).await)
             }

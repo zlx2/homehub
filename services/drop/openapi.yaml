@@ -11,6 +11,7 @@ servers:
     description: HomeHub public route
 security:
   - homeHubSession: []
+  - homeHubAgentToken: []
 tags:
   - name: Items
   - name: Attachments
@@ -53,10 +54,11 @@ paths:
     post:
       tags: [Items]
       summary: Create a temporary item
-      description: Browser sessions and HomeHub device tokens scoped to `drop.upload` may create items.
+      description: Browser sessions, `drop.upload` device tokens, and the Hermes `agent.root` token may create items.
       security:
         - homeHubSession: []
         - homeHubDeviceToken: []
+        - homeHubAgentToken: []
       parameters:
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
       requestBody:
@@ -86,7 +88,7 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
     delete:
       tags: [Items]
-      summary: Delete an item (owner only)
+      summary: Delete an item (owner or Hermes)
       responses:
         "204": {description: Deleted}
         "403": {$ref: "#/components/responses/Forbidden"}
@@ -102,7 +104,7 @@ paths:
   /api/v1/items/{id}/expiry:
     patch:
       tags: [Items]
-      summary: Change expiry (owner only)
+      summary: Change expiry (owner or Hermes)
       parameters:
         - {$ref: "#/components/parameters/ItemID"}
       requestBody:
@@ -137,7 +139,7 @@ paths:
   /api/v1/status:
     get:
       tags: [System]
-      summary: Storage and traffic status (owner only)
+      summary: Storage and traffic status (owner or Hermes)
       responses:
         "200": {description: Status report}
         "403": {$ref: "#/components/responses/Forbidden"}
@@ -159,6 +161,11 @@ components:
       scheme: bearer
       bearerFormat: HomeHub device token
       description: Revocable token restricted at the edge to `POST /drop/api/v1/items`.
+    homeHubAgentToken:
+      type: http
+      scheme: bearer
+      bearerFormat: HomeHub Hermes token
+      description: HomeHub-wide `agent.root` token. Control exchanges it for a short-lived identity bound to the Drop audience.
   parameters:
     ItemID: {name: id, in: path, required: true, schema: {type: string}}
     AttachmentID: {name: id, in: path, required: true, schema: {type: string}}
@@ -183,7 +190,7 @@ components:
         text_truncated: {type: boolean}
         text_size: {type: integer, format: int64}
         has_text: {type: boolean}
-        source: {type: string, enum: [owner, guest]}
+        source: {type: string, enum: [owner, guest, hermes]}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
         total_size: {type: integer, format: int64}

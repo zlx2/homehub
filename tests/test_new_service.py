@@ -33,6 +33,7 @@ class NewServiceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             service = root / "services/quick-notes"
             self.assertTrue((service / "cmd/quick-notes/main.go").is_file())
+            self.assertIn('"agent.root"', (service / "cmd/quick-notes/main.go").read_text(encoding="utf-8"))
             compose = (service / "compose.homehub.yaml").read_text(encoding="utf-8")
             self.assertIn('/quick-notes", "healthcheck"', compose)
             self.assertNotIn("__", compose)
@@ -54,6 +55,7 @@ class NewServiceTests(unittest.TestCase):
             compose = (root / "services/tiny-api/compose.homehub.yaml").read_text(encoding="utf-8")
             self.assertIn('/usr/local/bin/tiny-api", "healthcheck"', compose)
             self.assertTrue((root / "services/tiny-api/src/main.rs").is_file())
+            self.assertIn('"agent.root"', (root / "services/tiny-api/src/main.rs").read_text(encoding="utf-8"))
 
     def test_rejects_invalid_name_without_writing_service(self) -> None:
         temporary, root = self.repo()
