@@ -92,8 +92,6 @@ onBeforeUnmount(() => {
           class="lightbox-action"
           :href="`${current.download_url}?download=1`"
           :download="current.original_name"
-          target="_blank"
-          rel="noopener"
           :aria-label="`下载 ${current.original_name}`"
         ><AppIcon name="download" /></a>
         <button class="lightbox-action" type="button" aria-label="关闭图片预览" @click="emit('close')"><AppIcon name="close" /></button>
@@ -111,7 +109,7 @@ onBeforeUnmount(() => {
         <div v-if="loading" class="lightbox-loading"><i></i><span>正在加载预览</span></div>
         <div v-if="failed" class="lightbox-failed">
           <strong>这张图片暂时无法预览</strong>
-          <a :href="`${current.download_url}?download=1`" target="_blank" rel="noopener">下载原图</a>
+          <a :href="`${current.download_url}?download=1`" :download="current.original_name">下载原图</a>
         </div>
         <img
           v-show="!failed"

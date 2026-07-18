@@ -108,8 +108,6 @@ onMounted(() => {
       class="attachment-download"
       :href="`${attachment.download_url}?download=1`"
       :download="attachment.original_name"
-      target="_blank"
-      rel="noopener"
       :aria-label="`下载 ${attachment.original_name}`"
     >
       <AppIcon name="download" />
