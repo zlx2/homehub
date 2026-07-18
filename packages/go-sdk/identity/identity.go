@@ -3,147 +3,163 @@ package identity
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
-	"fmt"
 	"net/http"
-	"os"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const (
-	HeaderName = "X-HomeHub-Identity"
-	Issuer     = "homehub-control"
-	maxToken   = 8192
-	maxTTL     = 90 * time.Second
-	clockSkew  = 30 * time.Second
+	Issuer               = "homehub-iam"
+	SystemRootPermission = "system.root"
+	maxTokenBytes         = 8192
+	clockSkew             = 15 * time.Second
 )
 
+var (
+	principalID   = regexp.MustCompile(`^(human|guest|device|node|workload|agent):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	permissionID  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}$`)
+	audienceID    = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
+)
+
+type Actor struct {
+	Subject string `json:"sub"`
+}
+
 type Claims struct {
-	Issuer          string   `json:"iss"`
-	Audience        string   `json:"aud"`
-	Subject         string   `json:"sub"`
-	Name            string   `json:"name"`
-	Scopes          []string `json:"scopes"`
-	AuthorizedParty string   `json:"azp,omitempty"`
-	Models          []string `json:"models,omitempty"`
-	IssuedAt        int64    `json:"iat"`
-	Expires         int64    `json:"exp"`
+	Issuer           string   `json:"iss"`
+	Audience         string   `json:"aud"`
+	Subject          string   `json:"sub"`
+	Actor            *Actor   `json:"act,omitempty"`
+	AuthorizedParty  string   `json:"azp"`
+	Realm            string   `json:"realm"`
+	Permissions      []string `json:"permissions"`
+	SessionID        string   `json:"sid,omitempty"`
+	TokenID          string   `json:"jti"`
+	DelegationID     string   `json:"delegation_id,omitempty"`
+	Authentication   []string `json:"amr,omitempty"`
+	AuthenticationAt int64    `json:"auth_time,omitempty"`
+	IssuedAt         int64    `json:"iat"`
+	NotBefore        int64    `json:"nbf,omitempty"`
+	Expires          int64    `json:"exp"`
 }
 
-func (c Claims) HasScope(expected string) bool {
-	for _, scope := range c.Scopes {
-		if scope == expected {
+func (claims Claims) EffectiveActor() string {
+	if claims.Actor != nil {
+		return claims.Actor.Subject
+	}
+	return claims.Subject
+}
+
+func (claims Claims) HasPermission(expected string) bool {
+	for _, permission := range claims.Permissions {
+		if permission == expected {
 			return true
 		}
 	}
 	return false
 }
 
-func (c Claims) HasAnyScope(expected ...string) bool {
-	for _, scope := range expected {
-		if c.HasScope(scope) {
-			return true
-		}
-	}
-	return false
+func (claims Claims) Allows(expected string) bool {
+	return claims.HasPermission(expected) || claims.HasPermission(SystemRootPermission)
 }
 
 type Verifier struct {
-	publicKey ed25519.PublicKey
-	audience  string
-	now       func() time.Time
+	keys     map[string]ed25519.PublicKey
+	audience string
+	maxTTL   time.Duration
+	now      func() time.Time
 }
 
-func NewVerifier(publicKey ed25519.PublicKey, audience string) (*Verifier, error) {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return nil, errors.New("HomeHub identity public key must be Ed25519")
+func NewVerifier(keys map[string]ed25519.PublicKey, audience string, maxTTL time.Duration) (*Verifier, error) {
+	if len(keys) == 0 || !audienceID.MatchString(audience) {
+		return nil, errors.New("invalid HomeHub verifier configuration")
 	}
-	if strings.TrimSpace(audience) == "" {
-		return nil, errors.New("HomeHub identity audience must not be empty")
+	if maxTTL < 30*time.Second || maxTTL > 15*time.Minute {
+		return nil, errors.New("invalid HomeHub token TTL ceiling")
 	}
-	return &Verifier{publicKey: append(ed25519.PublicKey(nil), publicKey...), audience: audience, now: time.Now}, nil
-}
-
-func NewVerifierFromFile(path, audience string) (*Verifier, error) {
-	value, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read HomeHub identity public key: %w", err)
-	}
-	publicKey, err := ParsePublicKey(value)
-	if err != nil {
-		return nil, err
-	}
-	return NewVerifier(publicKey, audience)
-}
-
-func ParsePublicKey(value []byte) (ed25519.PublicKey, error) {
-	trimmed := strings.TrimSpace(string(value))
-	if block, _ := pem.Decode([]byte(trimmed)); block != nil {
-		parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return nil, errors.New("invalid HomeHub identity public key")
+	keyCopy := make(map[string]ed25519.PublicKey, len(keys))
+	for keyID, publicKey := range keys {
+		if strings.TrimSpace(keyID) == "" || len(publicKey) != ed25519.PublicKeySize {
+			return nil, errors.New("HomeHub verification keys must be named Ed25519 keys")
 		}
-		key, ok := parsed.(ed25519.PublicKey)
-		if !ok || len(key) != ed25519.PublicKeySize {
-			return nil, errors.New("HomeHub identity public key must be Ed25519")
-		}
-		return append(ed25519.PublicKey(nil), key...), nil
+		keyCopy[keyID] = append(ed25519.PublicKey(nil), publicKey...)
 	}
-	for _, encoding := range []*base64.Encoding{
-		base64.RawStdEncoding, base64.StdEncoding, base64.RawURLEncoding, base64.URLEncoding,
-	} {
-		decoded, err := encoding.DecodeString(trimmed)
-		if err == nil && len(decoded) == ed25519.PublicKeySize {
-			return ed25519.PublicKey(decoded), nil
-		}
-	}
-	return nil, errors.New("invalid HomeHub identity public key")
+	return &Verifier{keys: keyCopy, audience: audience, maxTTL: maxTTL, now: time.Now}, nil
 }
 
-func (v *Verifier) Verify(token string) (Claims, error) {
-	if v == nil || len(v.publicKey) != ed25519.PublicKeySize || len(token) == 0 || len(token) > maxToken {
-		return Claims{}, errors.New("invalid identity token")
+func (verifier *Verifier) Verify(token string) (Claims, error) {
+	if verifier == nil || len(token) == 0 || len(token) > maxTokenBytes {
+		return Claims{}, errors.New("invalid access token")
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return Claims{}, errors.New("invalid identity token")
+		return Claims{}, errors.New("invalid access token")
 	}
-	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return Claims{}, errors.New("invalid identity token")
-	}
+
 	var header struct {
 		Algorithm string `json:"alg"`
 		Type      string `json:"typ"`
+		KeyID     string `json:"kid"`
 	}
-	if json.Unmarshal(headerBytes, &header) != nil || header.Algorithm != "EdDSA" || header.Type != "JWT" {
-		return Claims{}, errors.New("unsupported identity token")
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || json.Unmarshal(headerBytes, &header) != nil || header.Algorithm != "EdDSA" || header.Type != "at+jwt" || header.KeyID == "" {
+		return Claims{}, errors.New("unsupported access token")
+	}
+	publicKey, ok := verifier.keys[header.KeyID]
+	if !ok {
+		return Claims{}, errors.New("unknown access token key")
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(v.publicKey, []byte(parts[0]+"."+parts[1]), signature) {
-		return Claims{}, errors.New("invalid identity token signature")
+	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(publicKey, []byte(parts[0]+"."+parts[1]), signature) {
+		return Claims{}, errors.New("invalid access token signature")
 	}
+
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return Claims{}, errors.New("invalid identity token")
+		return Claims{}, errors.New("invalid access token")
 	}
 	var claims Claims
-	if json.Unmarshal(payload, &claims) != nil {
-		return Claims{}, errors.New("invalid identity token")
-	}
-	now := v.now().UTC()
-	issuedAt := time.Unix(claims.IssuedAt, 0)
-	expires := time.Unix(claims.Expires, 0)
-	if claims.Issuer != Issuer || claims.Audience != v.audience || claims.Subject == "" ||
-		!expires.After(now) || issuedAt.After(now.Add(clockSkew)) || expires.Before(issuedAt) || expires.Sub(issuedAt) > maxTTL {
-		return Claims{}, errors.New("invalid identity token claims")
+	if json.Unmarshal(payload, &claims) != nil || !claims.valid(verifier.audience, verifier.maxTTL, verifier.now().UTC()) {
+		return Claims{}, errors.New("invalid access token claims")
 	}
 	return claims, nil
+}
+
+func (claims Claims) valid(audience string, maxTTL time.Duration, now time.Time) bool {
+	issuedAt := time.Unix(claims.IssuedAt, 0)
+	notBefore := time.Unix(claims.NotBefore, 0)
+	expires := time.Unix(claims.Expires, 0)
+	if claims.NotBefore == 0 {
+		notBefore = issuedAt
+	}
+	if claims.Issuer != Issuer || claims.Audience != audience || claims.Realm == "" ||
+		!principalID.MatchString(claims.Subject) || claims.AuthorizedParty == "" || claims.TokenID == "" ||
+		len(claims.Permissions) == 0 || !expires.After(now) || issuedAt.After(now.Add(clockSkew)) ||
+		notBefore.After(now.Add(clockSkew)) || expires.Before(issuedAt) || expires.Sub(issuedAt) > maxTTL {
+		return false
+	}
+	if claims.Actor != nil && !principalID.MatchString(claims.Actor.Subject) {
+		return false
+	}
+	for _, permission := range claims.Permissions {
+		if permission != SystemRootPermission && !permissionID.MatchString(permission) {
+			return false
+		}
+	}
+	return true
+}
+
+func BearerToken(request *http.Request) (string, error) {
+	value := strings.TrimSpace(request.Header.Get("Authorization"))
+	scheme, token, ok := strings.Cut(value, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" || strings.ContainsAny(token, " \t\r\n") {
+		return "", errors.New("missing bearer token")
+	}
+	return token, nil
 }
 
 type principalContextKey struct{}
@@ -153,25 +169,39 @@ func FromContext(ctx context.Context) (Claims, bool) {
 	return claims, ok
 }
 
-func (v *Verifier) Authenticate(requiredAny []string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		claims, err := v.Verify(request.Header.Get(HeaderName))
+func (verifier *Verifier) Authenticate(requiredAny []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		token, err := BearerToken(request)
 		if err != nil {
-			writeError(writer, http.StatusUnauthorized, "invalid_identity")
+			writeError(response, http.StatusUnauthorized, "invalid_token")
 			return
 		}
-		if len(requiredAny) > 0 && !claims.HasAnyScope(requiredAny...) {
-			writeError(writer, http.StatusForbidden, "insufficient_scope")
+		claims, err := verifier.Verify(token)
+		if err != nil {
+			writeError(response, http.StatusUnauthorized, "invalid_token")
 			return
+		}
+		if len(requiredAny) > 0 {
+			allowed := false
+			for _, permission := range requiredAny {
+				if claims.Allows(permission) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				writeError(response, http.StatusForbidden, "insufficient_permission")
+				return
+			}
 		}
 		ctx := context.WithValue(request.Context(), principalContextKey{}, claims)
-		next.ServeHTTP(writer, request.WithContext(ctx))
+		next.ServeHTTP(response, request.WithContext(ctx))
 	})
 }
 
-func writeError(writer http.ResponseWriter, status int, code string) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.Header().Set("X-Content-Type-Options", "nosniff")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(map[string]string{"error": code})
+func writeError(response http.ResponseWriter, status int, code string) {
+	response.Header().Set("Content-Type", "application/json")
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(status)
+	_ = json.NewEncoder(response).Encode(map[string]string{"error": code})
 }

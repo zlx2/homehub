@@ -1,8 +1,9 @@
 FROM golang:1.26.5-alpine3.24 AS build
 
 WORKDIR /src
-COPY apps/iam/go.mod ./
-COPY apps/iam/ ./
+COPY packages/go-sdk /src/packages/go-sdk
+COPY apps/iam /src/apps/iam
+WORKDIR /src/apps/iam
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/homehub-iam ./cmd/homehub-iam

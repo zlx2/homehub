@@ -25,6 +25,7 @@ v2-up: ## Build and start the V2 IAM, OpenFGA, PostgreSQL, and React portal
 v2-check: ## Check the running V2 IAM and portal
 	@curl --fail --silent http://127.0.0.1:18100/health/ready >/dev/null
 	@curl --fail --silent http://127.0.0.1:18100/v1/metadata >/dev/null
+	@curl --fail --silent http://127.0.0.1:18100/.well-known/jwks.json >/dev/null
 	@curl --fail --silent http://127.0.0.1:18080/health >/dev/null
 
 v2-down: ## Stop the V2 development stack without deleting test data
@@ -43,7 +44,7 @@ test-iam: ## Run HomeHub IAM unit tests in the pinned Go toolchain
 	@docker run --rm --network host --user $$(id -u):$$(id -g) \
 		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
 		-e HTTP_PROXY=http://127.0.0.1:1081 -e HTTPS_PROXY=http://127.0.0.1:1081 \
-		-v "$(CURDIR)/apps/iam:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
+		-v "$(CURDIR):/repo" -w /repo/apps/iam golang:1.26.5-alpine3.24 go test ./...
 
 test-portal: ## Type-check and build the React portal
 	@docker build --network host -f apps/portal/Dockerfile -t homehub/portal:test .

@@ -12,20 +12,32 @@ import (
 type Server struct {
 	version   string
 	readiness func(context.Context) error
+	jwkSet    any
 }
 
 type Options struct {
 	Version   string
 	Readiness func(context.Context) error
+	JWKSet    any
 }
 
 func New(options Options) http.Handler {
-	server := &Server{version: options.Version, readiness: options.Readiness}
+	server := &Server{version: options.Version, readiness: options.Readiness, jwkSet: options.JWKSet}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", server.health)
 	mux.HandleFunc("GET /health/ready", server.ready)
 	mux.HandleFunc("GET /v1/metadata", server.metadata)
+	mux.HandleFunc("GET /.well-known/jwks.json", server.jwks)
 	return server.middleware(mux)
+}
+
+func (server *Server) jwks(response http.ResponseWriter, _ *http.Request) {
+	if server.jwkSet == nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "signing_keys_unavailable"})
+		return
+	}
+	response.Header().Set("Cache-Control", "public, max-age=60, stale-if-error=300")
+	writeJSON(response, http.StatusOK, server.jwkSet)
 }
 
 func (server *Server) ready(response http.ResponseWriter, request *http.Request) {

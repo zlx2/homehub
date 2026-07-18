@@ -3,6 +3,12 @@ info:
   title: HomeHub IAM API
   version: 0.1.0
 paths:
+  /.well-known/jwks.json:
+    get:
+      operationId: getJSONWebKeySet
+      responses:
+        "200":
+          description: Current and retiring public token verification keys
   /health/live:
     get:
       operationId: getLiveness

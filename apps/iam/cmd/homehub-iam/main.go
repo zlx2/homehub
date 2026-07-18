@@ -13,6 +13,7 @@ import (
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
+	"gitee.com/zlx23/homehub/apps/iam/internal/token"
 )
 
 var version = "dev"
@@ -45,11 +46,24 @@ func main() {
 	}
 	defer store.Close()
 
+	signingKeyFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_FILE"))
+	signingKeyID := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_ID"))
+	if signingKeyFile == "" || signingKeyID == "" {
+		slog.Error("IAM signing key configuration is required")
+		os.Exit(1)
+	}
+	signer, err := token.NewSignerFromFile(signingKeyID, signingKeyFile, 2*time.Minute)
+	if err != nil {
+		slog.Error("IAM signing key initialization failed", "error", err)
+		os.Exit(1)
+	}
+
 	server := &http.Server{
 		Addr: address,
 		Handler: httpapi.New(httpapi.Options{
 			Version:   version,
 			Readiness: store.Ping,
+			JWKSet:    signer.JWKSet(),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

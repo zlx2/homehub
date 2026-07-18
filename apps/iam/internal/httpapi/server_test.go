@@ -38,6 +38,18 @@ func TestMetadata(t *testing.T) {
 	}
 }
 
+func TestJWKS(t *testing.T) {
+	t.Parallel()
+
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
+	response := httptest.NewRecorder()
+	New(Options{Version: "test", JWKSet: map[string]any{"keys": []any{}}}).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") == "" {
+		t.Fatalf("status = %d, cache-control = %q", response.Code, response.Header().Get("Cache-Control"))
+	}
+}
+
 func TestReadinessFailure(t *testing.T) {
 	t.Parallel()
 
