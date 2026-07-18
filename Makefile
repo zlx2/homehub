@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-iam test-control test-portal test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -18,6 +18,12 @@ compose-config: ## Validate the development Compose configuration
 
 test-control: ## Run HomeHub Control unit tests in the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
+
+test-iam: ## Run HomeHub IAM unit tests in the pinned Go toolchain
+	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build -v "$(CURDIR)/apps/iam:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
+
+test-portal: ## Type-check and build the React portal
+	@docker build --network host -f apps/portal/Dockerfile -t homehub/portal:test .
 
 test-sdk-go: ## Run the HomeHub Go SDK tests
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build -v "$(CURDIR)/packages/go-sdk:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
@@ -65,6 +71,9 @@ new-service: ## Generate a service: make new-service NAME=notes LANG=go VISIBILI
 
 format-control: ## Format HomeHub Control Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
+
+format-iam: ## Format HomeHub IAM Go source
+	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/iam:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
 
 edge-up: ## Start the loopback-only Traefik development edge
 	@docker compose $(COMPOSE_ARGS) up -d traefik

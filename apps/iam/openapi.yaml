@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: HomeHub IAM API
+  version: 0.1.0
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Process is alive
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        "200":
+          description: IAM dependencies are ready
+  /v1/metadata:
+    get:
+      operationId: getIAMMetadata
+      responses:
+        "200":
+          description: Stable IAM protocol metadata

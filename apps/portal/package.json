@@ -5,16 +5,22 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
-    "svelte": "5.56.6"
+    "@tanstack/react-query": "5.101.2",
+    "@tanstack/react-router": "1.170.18",
+    "lucide-react": "1.25.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "7.2.0",
-    "@tsconfig/svelte": "5.0.8",
-    "svelte-check": "4.7.3",
-    "typescript": "6.0.3",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "6.0.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
     "vite": "8.1.5"
   }
 }

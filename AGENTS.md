@@ -16,7 +16,7 @@
 
 - Use Go 1.26.5 for HomeHub Control and infrastructure-oriented services.
 - Use Rust stable 1.97 with Edition 2024 for suitable business microservices.
-- Use Svelte and TypeScript for the portal.
+- Use React 19, TypeScript, and Vite for the portal.
 - Start with REST and JSON for service APIs.
 - Use SSE for streaming AI responses.
 - Define public and internal API contracts with OpenAPI 3.1.
@@ -26,10 +26,16 @@
 - Deny access by default.
 - Public HTTP traffic enters through Traefik.
 - Services must not trust identity headers supplied by clients.
-- HomeHub Control performs authentication and authorization.
+- HomeHub IAM owns authentication, authorization, sessions, credentials, token
+  exchange, delegation, and signing keys. HomeHub Control must not duplicate
+  these responsibilities.
 - Internal identity tokens must validate signature, issuer, audience, expiry, and scopes.
-- `agent.root` is the reserved Hermes housekeeper scope. Every registered service must accept it and map it to that service's highest permission level.
-- Hermes uses one non-interactive root API token at Control; Control must exchange it for short-lived, audience-bound internal identities before forwarding requests.
+- `system.root` is the reserved Hermes housekeeper permission. It is granted to
+  the Hermes agent principal, but Hermes still exchanges its credential at IAM
+  for short-lived, audience-bound access tokens.
+- Authorization permissions use `<service>.<resource>.<action>` names. Roles are
+  permission bundles and must not be used as service-side authorization checks.
+- Delegated requests must retain both the effective subject and the actual actor.
 - Databases must not be exposed publicly unless explicitly documented.
 - Existing public MySQL port 42061 and Redis port 38291 must remain available and will be hardened separately.
 - Never mount the unrestricted Docker socket into application containers.

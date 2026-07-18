@@ -1,121 +1,67 @@
 # HomeHub
 
-Personal service platform for a single public server. The platform provides a
-shared edge gateway, authentication, authorization, service catalog, sharing
-grants, and an AI gateway for independently deployable services.
+HomeHub is a personal service platform for one or more private servers. It
+provides a shared public edge, identity and authorization, a modular portal,
+agent delegation, service discovery, and independently deployable business
+services.
 
-## Stack
+V2 is an intentional clean rebuild. V1 test data, sessions, tokens, database
+schemas, and API compatibility are not retained.
 
-- Traefik for TLS termination and request routing
-- Go for the control plane and infrastructure-oriented services
-- Svelte and TypeScript for the portal
-- Rust or Go for business services
-- PostgreSQL as the default durable database
-- Redis for cache, rate limits, and transient queues
+## V2 stack
+
+- Traefik for TLS termination and public routing
+- Go 1.26.5 as the default backend language
+- React 19, TypeScript, Vite, and Tailwind CSS for the static portal
+- Rust stable 1.97 only for measured performance, memory, parsing, or safety needs
+- OpenFGA for relationship authorization
+- PostgreSQL for durable data, with a database and user owned by each service
+- Redis for cache, rate limits, and transient work only
 - Docker Compose for deployment and service discovery
-- Bitwarden Secrets Manager for production secrets
+- Bitwarden Secrets Manager for production credentials and private keys
 
-The current stack includes PostgreSQL, HomeHub Control, the Svelte portal,
-Traefik, a Beszel server-monitoring module, a native Hermes web terminal, and
-Drop as the first shareable business service. The owner portal is available at
-`https://111.229.205.99` with a trusted
-short-lived IP certificate. Owner authentication uses an Argon2id password,
-TOTP, an opaque server-side session, strict cookies, Origin validation, and CSRF
-protection. Anonymous requests cannot read the service directory APIs.
-The monitoring panel is mounted at `/server/`, reuses the HomeHub session through
-ForwardAuth, maps an authenticated HomeHub administrator to its internal owner
-account, and is restricted to the `admin` scope. Its local agent has no TCP
-listener and reaches Docker only through a loopback-bound read-only socket proxy.
-The Hermes module is mounted at `/hermes/`. A mobile-first Svelte/xterm.js
-client connects to host-native ttyd, which exposes the existing `hermes --tui`
-through a persistent tmux session. It is an owner-only host integration;
-Hermes data and configuration remain outside HomeHub.
+## Control plane
 
-Service access is deny-by-default. Administrators can access every registered
-service; other principals only see and reach services explicitly marked as
-shareable and covered by an active, unexpired grant. Runtime grants live in the
-Control database and grant changes are CSRF-protected and audited.
+- `apps/iam`: principals, credentials, sessions, authorization orchestration,
+  delegation, token exchange, signing keys, and audit
+- `apps/control`: service catalog, health aggregation, node metadata, and portal
+  control-plane APIs
+- `apps/portal`: the single React application shell and its feature modules
+- `OpenFGA`: group, role, ownership, and cross-resource relationships
 
-Friend access uses expiring capability links. An administrator selects one or
-more shareable services and sends the generated URL; opening it creates a
-restricted guest session without registration, a password, or TOTP. Revoking a
-link immediately revokes its active guest sessions and grants. Plaintext link
-tokens are never stored.
+HomeHub uses six stable principal kinds: `human`, `guest`, `device`, `node`,
+`workload`, and `agent`. Permissions use
+`<service>.<resource>.<action>`. Hermes is the trusted housekeeper agent and may
+receive the reserved `system.root` permission, but still uses short-lived,
+audience-bound tokens and remains attributable as the actual actor.
 
-Internal service identity uses short-lived, audience-bound Ed25519 tokens.
-Only HomeHub Control receives the signing seed; business containers receive a
-read-only public key and verify tokens again with the shared Go or Rust SDK.
-Catalog entries explicitly opt in with `identity_enabled`, so adding a service
-does not require another Control code branch.
+## Business services
 
-AI-enabled services also opt in with `ai_enabled` and an exact `ai_models`
-allowlist. Control injects a separate 60-second delegation bound to the source
-service and AI Gateway. The internal-only Go gateway routes stable aliases to
-DeepSeek and OpenCode Go; provider keys exist only in Bitwarden-backed secret
-files mounted into that container.
+Business services live under `services`. Each service owns its API, database,
+migrations, local resource rules, and versioned service manifest. Services do
+not read another service's database and do not trust identity headers supplied
+by clients.
 
-## Creating a service
+The normal request path validates a short-lived Ed25519 token locally. IAM and
+OpenFGA are not network dependencies for every business request.
 
-Generate a compile-ready Go or Rust service with its health endpoints,
-OpenAPI contract, hardened image, HomeHub identity middleware, Traefik labels,
-Compose fragment, and catalog registration:
+## Development
+
+The authoritative development worktree is `/home/ubuntu/homehub-v2` on the
+HomeHub server. The previous `/home/ubuntu/homehub` tree is retained only as a
+reference during reconstruction.
 
 ```sh
-make new-service NAME=quick-notes LANG=go VISIBILITY=owner
-make new-service NAME=shared-tool LANG=rust VISIBILITY=shared
-```
-
-Compose automatically discovers `services/*/compose.homehub.yaml`. Generated
-changes remain normal source files and must pass review and tests before they
-are deployed. The AI Gateway implementation lives under `services/ai-gateway`;
-its delegated identity boundary is documented in ADR 0008 and it has no public
-route.
-
-## Development verification
-
-```sh
+make test-iam
 make test-control
+make test-portal
 make test-sdk-go
-make test-sdk-rust
-make test-drop
-make test-ai-gateway
-make test-hermes-terminal
 make compose-config
-make dev-up
-make dev-check
-make public-check
-make hermes-terminal-check
 ```
 
-The development portal is bound to `127.0.0.1:18080`. Traefik's development
-dashboard is bound to `127.0.0.1:18081`.
+Production secrets, private keys, certificates, `.env` files, and runtime data
+must never be committed. Persistent runtime data lives outside this repository.
 
-The public edge binds only the server's private `eth0` address on ports 80 and
-443. Port 80 serves ACME HTTP-01 challenges and redirects all other requests.
-The certificate renewal timer checks twice daily and deploys renewed material
-to Traefik without storing certificates in Git.
-
-Static host firewall policy is intentionally minimal and lives in
-`deploy/host`. Docker, Tailscale, and Fail2Ban own their dynamic rules; their
-runtime chains must not be captured with `iptables-save` and restored at boot.
-The same directory contains bounded journald and Docker logging defaults to
-prevent routine logs from consuming the small system disk.
-Install or refresh these host settings with `make host-baseline`. The installer
-does not restart Docker; its logging defaults take effect after the next planned
-daemon restart.
-
-## Repository layout
-
-- `apps/control`: HomeHub Control API
-- `apps/portal`: owner portal
-- `services`: independently deployable business services
-- `packages`: shared contracts and small language-specific SDKs
-- `deploy`: Compose, Traefik, PostgreSQL, and deployment scripts
-- `docs`: architecture decisions and operational documentation
-- `tests`: cross-service integration and end-to-end tests
-
-## Safety
-
-This repository must never contain production secrets, database contents,
-private keys, or runtime data. Persistent data lives under
-`/srv/homehub` on the server.
+See [ADR 0011](docs/adr/0011-v2-identity-and-service-architecture.md) and the
+[V2 component boundaries](docs/architecture/v2-boundaries.md) for the current
+architecture contract.
