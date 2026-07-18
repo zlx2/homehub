@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-ai-gateway test-hermes-terminal format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status compose-config test-control test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -31,6 +31,10 @@ test-sdk-rust: ## Run the HomeHub Rust SDK tests
 
 test-drop: ## Build Drop frontend and run Go tests with pinned toolchains
 	@docker build --network host -f services/drop/Dockerfile -t homehub/drop:test .
+
+test-telegram-bridge: ## Run Telegram Bridge tests with the pinned Go toolchain
+	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \
+		-v "$(CURDIR)/services/telegram-bridge:/src" -w /src golang:1.26.5-alpine3.24 go test ./...
 
 test-ai-gateway: ## Run AI Gateway tests in the pinned Go toolchain
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \

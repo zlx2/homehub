@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info:
+  title: Telegram Bridge Internal API
+  version: 0.1.0
+  description: Loopback-only health contract for the Telegram-to-Drop worker.
+servers:
+  - url: http://127.0.0.1:8730
+paths:
+  /health/live:
+    get:
+      summary: Process liveness
+      responses:
+        "204": {description: Process is alive}
+  /health/ready:
+    get:
+      summary: Telegram worker readiness
+      responses:
+        "204": {description: Bot token was verified and polling is active}
+        "503": {description: Worker has not completed Telegram initialization}

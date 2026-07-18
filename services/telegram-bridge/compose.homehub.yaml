@@ -1,0 +1,48 @@
+services:
+  telegram-bridge:
+    image: homehub/telegram-bridge:local
+    build:
+      context: ../..
+      dockerfile: services/telegram-bridge/Dockerfile
+      network: host
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      drop:
+        condition: service_healthy
+    environment:
+      TELEGRAM_BRIDGE_LISTEN_ADDRESS: 127.0.0.1:8730
+      TELEGRAM_BRIDGE_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
+      TELEGRAM_BRIDGE_DROP_TOKEN_FILE: /run/secrets/telegram_drop_token
+      TELEGRAM_BRIDGE_DROP_BASE_URL: https://111.229.205.99/drop
+      TELEGRAM_BRIDGE_ALLOWED_USER_IDS: ${TELEGRAM_BRIDGE_ALLOWED_USER_IDS:-}
+      TELEGRAM_BRIDGE_ALLOWED_CHAT_IDS: ${TELEGRAM_BRIDGE_ALLOWED_CHAT_IDS:-}
+      TELEGRAM_BRIDGE_TTL_DAYS: ${TELEGRAM_BRIDGE_TTL_DAYS:-1}
+      TELEGRAM_BRIDGE_ACK_MODE: ${TELEGRAM_BRIDGE_ACK_MODE:-private}
+      HTTP_PROXY: http://127.0.0.1:1081
+      HTTPS_PROXY: http://127.0.0.1:1081
+      NO_PROXY: localhost,127.0.0.1,111.229.205.99
+    secrets:
+      - source: telegram_bot_token
+        target: telegram_bot_token
+      - source: telegram_drop_token
+        target: telegram_drop_token
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/telegram-bridge", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+secrets:
+  telegram_bot_token:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/telegram_bot_token
+  telegram_drop_token:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/telegram_drop_token

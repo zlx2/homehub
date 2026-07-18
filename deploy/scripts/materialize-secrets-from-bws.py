@@ -35,6 +35,8 @@ TARGETS = {
 
 OPTIONAL_TARGETS = {
     "hermes_root_token": [("hermes_root_token", HERMES_UID, HERMES_GID)],
+    "telegram_bot_token": [("telegram_bot_token", 65532, 65532)],
+    "telegram_drop_token": [("telegram_drop_token", 65532, 65532)],
 }
 
 IDENTITY_SECRET_KEY = "drop_identity_key"
