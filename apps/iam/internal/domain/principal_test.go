@@ -38,3 +38,17 @@ func TestParsePrincipalID(t *testing.T) {
 		})
 	}
 }
+
+func TestMachinePrincipalKinds(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []PrincipalKind{PrincipalDevice, PrincipalNode, PrincipalWorkload, PrincipalAgent} {
+		if !kind.Machine() {
+			t.Fatalf("%s should be a machine principal kind", kind)
+		}
+	}
+	for _, kind := range []PrincipalKind{PrincipalHuman, PrincipalGuest, "unknown"} {
+		if kind.Machine() {
+			t.Fatalf("%s should not be a machine principal kind", kind)
+		}
+	}
+}

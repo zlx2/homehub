@@ -6,9 +6,12 @@ import (
 )
 
 var (
-	serviceIDName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
-	audienceName  = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
-	relationName  = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+	serviceIDName    = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+	audienceName     = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
+	relationName     = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
+	serviceRelations = map[string]struct{}{
+		"caller": {}, "viewer": {}, "editor": {}, "administrator": {},
+	}
 )
 
 type ServiceManifest struct {
@@ -36,7 +39,7 @@ func (manifest ServiceManifest) Validate() error {
 	for _, permission := range manifest.Permissions {
 		parsed, err := ParsePermission(permission.Name)
 		if err != nil || parsed.String() == SystemRootPermission || permission.Description == "" ||
-			!relationName.MatchString(permission.RequiredRelation) ||
+			!relationName.MatchString(permission.RequiredRelation) || !isServiceRelation(permission.RequiredRelation) ||
 			(permission.Risk != "normal" && permission.Risk != "sensitive" && permission.Risk != "dangerous") {
 			return errors.New("invalid service manifest permission")
 		}
@@ -46,4 +49,9 @@ func (manifest ServiceManifest) Validate() error {
 		seen[permission.Name] = struct{}{}
 	}
 	return nil
+}
+
+func isServiceRelation(value string) bool {
+	_, ok := serviceRelations[value]
+	return ok
 }

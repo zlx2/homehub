@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HomeHub IAM API
-  version: 0.1.0
+  version: 0.2.0
 paths:
   /.well-known/jwks.json:
     get:
@@ -39,6 +39,52 @@ paths:
           description: Invalid machine credential
         "403":
           description: Principal is not allowed to request the permission
+  /v1/machine-identities:
+    post:
+      operationId: createMachineIdentity
+      description: Creates a device, node, workload, or agent and returns its credential exactly once.
+      security:
+        - accessToken: []
+      x-homehub-permissions: [iam.principal.manage, iam.grant.manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, display_name, external_subject, grants]
+              properties:
+                kind:
+                  type: string
+                  enum: [device, node, workload, agent]
+                display_name:
+                  type: string
+                  maxLength: 128
+                external_subject:
+                  type: string
+                grants:
+                  type: array
+                  minItems: 1
+                  maxItems: 16
+                  items:
+                    type: object
+                    required: [service_id, relation]
+                    properties:
+                      service_id:
+                        type: string
+                      relation:
+                        type: string
+      responses:
+        "201":
+          description: Machine identity and one-time credential
+        "400":
+          description: Invalid kind, service, relation, or request
+        "401":
+          description: Missing, invalid, expired, or wrong-audience token
+        "403":
+          description: Token lacks iam.principal.manage or iam.grant.manage
+        "409":
+          description: External machine identity already exists
   /health/live:
     get:
       operationId: getLiveness
@@ -62,3 +108,7 @@ components:
     machineCredential:
       type: http
       scheme: bearer
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: HomeHub EdDSA access token

@@ -65,7 +65,7 @@ test-iam-integration: ## Exchange and verify a live V2 machine access token
 		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
 		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
 		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
-		-w /repo/apps/iam golang:1.26.5-alpine3.24 go test -count=1 -run TestMachineCredentialExchange ./integration
+		-w /repo/apps/iam golang:1.26.5-alpine3.24 go test -count=1 -run 'Test(MachineCredentialExchange|RootCreatesBoundedWorkloadIdentity)$$' ./integration
 
 test-portal: ## Type-check and build the React portal
 	@docker build --network host -f apps/portal/Dockerfile -t homehub/portal:test .

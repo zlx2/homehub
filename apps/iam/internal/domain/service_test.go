@@ -17,4 +17,9 @@ func TestServiceManifestValidation(t *testing.T) {
 	if err := manifest.Validate(); err == nil {
 		t.Fatal("invalid permission unexpectedly passed validation")
 	}
+	manifest.Permissions[0].Name = "drop.item.create"
+	manifest.Permissions[0].RequiredRelation = "manager"
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("resource-only relation unexpectedly passed service manifest validation")
+	}
 }

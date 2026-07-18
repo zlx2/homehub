@@ -107,6 +107,24 @@ func (client *Client) WriteRelationship(ctx context.Context, state storepostgres
 	return nil
 }
 
+func (client *Client) DeleteRelationship(ctx context.Context, state storepostgres.AuthorizationState, user, relation, object string) error {
+	input := map[string]any{
+		"authorization_model_id": state.ModelID,
+		"deletes": map[string]any{"tuple_keys": []map[string]string{{
+			"user": user, "relation": relation, "object": object,
+		}}},
+	}
+	path := "/stores/" + url.PathEscape(state.StoreID) + "/write"
+	if err := client.doJSON(ctx, http.MethodPost, path, input, nil); err != nil {
+		allowed, checkErr := client.Check(ctx, state, user, relation, object)
+		if checkErr == nil && !allowed {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (client *Client) Check(ctx context.Context, state storepostgres.AuthorizationState, user, relation, object string) (bool, error) {
 	input := map[string]any{
 		"authorization_model_id": state.ModelID,

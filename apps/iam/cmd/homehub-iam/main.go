@@ -15,9 +15,11 @@ import (
 	"gitee.com/zlx23/homehub/apps/iam/internal/bootstrap"
 	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
+	"gitee.com/zlx23/homehub/apps/iam/internal/machineadmin"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
 	"gitee.com/zlx23/homehub/apps/iam/manifests"
+	"homehub.local/go-sdk/identity"
 )
 
 var version = "dev"
@@ -87,6 +89,11 @@ func main() {
 		slog.Error("IAM signing key initialization failed", "error", err)
 		os.Exit(1)
 	}
+	iamVerifier, err := identity.NewVerifier(signer.VerificationKeys(), "homehub-iam", 2*time.Minute)
+	if err != nil {
+		slog.Error("IAM access token verifier initialization failed", "error", err)
+		os.Exit(1)
+	}
 	rootCredentialFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE"))
 	if rootCredentialFile == "" {
 		slog.Error("IAM root agent credential file is required")
@@ -101,6 +108,7 @@ func main() {
 	}
 	slog.Info("root agent ready", "subject", rootAgent.Subject())
 	tokenExchange := exchange.New(store, openFGA, authorizationState, signer)
+	machineAdministrator := machineadmin.New(store, openFGA, authorizationState)
 
 	server := &http.Server{
 		Addr: address,
@@ -114,6 +122,8 @@ func main() {
 			},
 			JWKSet:    signer.JWKSet(),
 			Exchanger: tokenExchange,
+			Verifier:  iamVerifier,
+			Machines:  machineAdministrator,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

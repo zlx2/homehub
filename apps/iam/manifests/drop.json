@@ -7,6 +7,6 @@
     {"name": "drop.item.create", "description": "Create and upload an item", "risk": "normal", "required_relation": "caller"},
     {"name": "drop.item.read", "description": "Read an item and its original file", "risk": "normal", "required_relation": "viewer"},
     {"name": "drop.item.list", "description": "List visible items", "risk": "normal", "required_relation": "viewer"},
-    {"name": "drop.item.delete", "description": "Delete an item", "risk": "dangerous", "required_relation": "manager"}
+    {"name": "drop.item.delete", "description": "Delete an item", "risk": "dangerous", "required_relation": "administrator"}
   ]
 }

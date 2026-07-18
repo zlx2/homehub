@@ -86,8 +86,12 @@ func TestMachineCredentialExchange(t *testing.T) {
 }
 
 func exchange(t *testing.T, client *http.Client, baseURL, credential string, permissions []string) *http.Response {
+	return exchangeFor(t, client, baseURL, credential, "homehub-drop", permissions)
+}
+
+func exchangeFor(t *testing.T, client *http.Client, baseURL, credential, audience string, permissions []string) *http.Response {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{"audience": "homehub-drop", "permissions": permissions})
+	body, err := json.Marshal(map[string]any{"audience": audience, "permissions": permissions})
 	if err != nil {
 		t.Fatal(err)
 	}

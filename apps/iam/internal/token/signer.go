@@ -67,6 +67,10 @@ func (signer *Signer) PublicKey() ed25519.PublicKey {
 	return append(ed25519.PublicKey(nil), signer.key.Public().(ed25519.PublicKey)...)
 }
 
+func (signer *Signer) VerificationKeys() map[string]ed25519.PublicKey {
+	return map[string]ed25519.PublicKey{signer.keyID: signer.PublicKey()}
+}
+
 func (signer *Signer) JWKSet() map[string]any {
 	return map[string]any{"keys": []map[string]string{{
 		"kty": "OKP", "crv": "Ed25519", "use": "sig", "alg": "EdDSA",

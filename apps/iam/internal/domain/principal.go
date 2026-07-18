@@ -32,6 +32,15 @@ func (kind PrincipalKind) Valid() bool {
 	}
 }
 
+func (kind PrincipalKind) Machine() bool {
+	switch kind {
+	case PrincipalDevice, PrincipalNode, PrincipalWorkload, PrincipalAgent:
+		return true
+	default:
+		return false
+	}
+}
+
 type PrincipalID struct {
 	Kind PrincipalKind
 	ID   string

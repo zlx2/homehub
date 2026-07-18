@@ -6,9 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+var (
+	ErrMachineIdentityExists = errors.New("machine identity already exists")
+	machineExternalSubject   = regexp.MustCompile(`^[a-z][a-z0-9._-]{1,126}[a-z0-9]$`)
 )
 
 type MachineIdentity struct {
@@ -28,6 +36,83 @@ type AudiencePolicy struct {
 
 func HashCredential(value string) [sha256.Size]byte {
 	return sha256.Sum256([]byte(value))
+}
+
+func (store *Store) CreateMachineIdentity(ctx context.Context, realmSlug string, kind domain.PrincipalKind, displayName, externalSubject, credential string) (MachineIdentity, error) {
+	displayName = strings.TrimSpace(displayName)
+	externalSubject = strings.TrimSpace(externalSubject)
+	if !kind.Machine() || displayName == "" || len(displayName) > 128 || !machineExternalSubject.MatchString(externalSubject) || len(credential) < 32 {
+		return MachineIdentity{}, errors.New("invalid machine identity")
+	}
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		return MachineIdentity{}, fmt.Errorf("begin machine identity creation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+	var identity MachineIdentity
+	err = transaction.QueryRow(ctx, `
+		INSERT INTO principals(realm_id, kind, display_name, status)
+		SELECT id, $2, $3, 'active' FROM realms WHERE slug = $1
+		RETURNING id::text, kind, display_name`, realmSlug, kind, displayName).
+		Scan(&identity.PrincipalID, &identity.Kind, &identity.DisplayName)
+	if err != nil {
+		return MachineIdentity{}, fmt.Errorf("create machine principal: %w", err)
+	}
+	identity.Realm = realmSlug
+	if _, err = transaction.Exec(ctx, `
+		INSERT INTO external_accounts(provider, external_subject, principal_id)
+		VALUES ('homehub-machine', $1, $2::uuid)`, externalSubject, identity.PrincipalID); err != nil {
+		var databaseError *pgconn.PgError
+		if errors.As(err, &databaseError) && databaseError.Code == "23505" {
+			return MachineIdentity{}, ErrMachineIdentityExists
+		}
+		return MachineIdentity{}, fmt.Errorf("link machine identity: %w", err)
+	}
+	hash := HashCredential(credential)
+	err = transaction.QueryRow(ctx, `
+		INSERT INTO credentials(principal_id, kind, label, secret_hash)
+		VALUES ($1::uuid, 'api_key', 'primary', $2)
+		RETURNING id::text`, identity.PrincipalID, hash[:]).Scan(&identity.CredentialID)
+	if err != nil {
+		return MachineIdentity{}, fmt.Errorf("create machine credential: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return MachineIdentity{}, fmt.Errorf("commit machine identity creation: %w", err)
+	}
+	return identity, nil
+}
+
+func (store *Store) DeleteMachineIdentity(ctx context.Context, principalID string) error {
+	command, err := store.pool.Exec(ctx, `DELETE FROM principals WHERE id = $1::uuid AND kind IN ('device', 'node', 'workload', 'agent')`, principalID)
+	if err != nil {
+		return fmt.Errorf("delete machine identity: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return errors.New("machine identity not found")
+	}
+	return nil
+}
+
+func (store *Store) ServiceRelationExists(ctx context.Context, serviceID, relation string) (bool, error) {
+	var exists bool
+	err := store.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM permissions p
+			JOIN service_audiences s ON s.audience = p.audience
+			WHERE s.service_id = $1 AND s.enabled AND p.required_relation = $2 AND p.deprecated_at IS NULL
+		)`, serviceID, relation).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("validate service grant: %w", err)
+	}
+	return exists, nil
+}
+
+func (store *Store) RecordMachineAdminAudit(ctx context.Context, actorPrincipalID, eventType, outcome, resource, requestID string, details map[string]any) {
+	encoded, _ := json.Marshal(details)
+	_, _ = store.pool.Exec(ctx, `
+		INSERT INTO audit_events(realm_id, subject_id, actor_id, event_type, outcome, audience, resource, request_id, details)
+		SELECT p.realm_id, p.id, p.id, $2, $3, 'homehub-iam', $4, $5, $6
+		FROM principals p WHERE p.id = $1::uuid`, actorPrincipalID, eventType, outcome, resource, requestID, encoded)
 }
 
 func (store *Store) EnsureSystemAgent(ctx context.Context, realmSlug, externalSubject, displayName, credential string) (MachineIdentity, error) {
