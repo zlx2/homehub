@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"gitee.com/zlx23/homehub/apps/iam/authz"
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
@@ -46,6 +47,20 @@ func main() {
 	}
 	defer store.Close()
 
+	openFGA, err := authz.NewClient(strings.TrimSpace(os.Getenv("HOMEHUB_IAM_OPENFGA_URL")))
+	if err != nil {
+		slog.Error("OpenFGA configuration is invalid", "error", err)
+		os.Exit(1)
+	}
+	authzCtx, authzCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	authorizationState, err := openFGA.EnsureModel(authzCtx, store, "homehub")
+	authzCancel()
+	if err != nil {
+		slog.Error("OpenFGA authorization model initialization failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("OpenFGA authorization model ready", "store_id", authorizationState.StoreID, "model_id", authorizationState.ModelID)
+
 	signingKeyFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_FILE"))
 	signingKeyID := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_ID"))
 	if signingKeyFile == "" || signingKeyID == "" {
@@ -61,9 +76,14 @@ func main() {
 	server := &http.Server{
 		Addr: address,
 		Handler: httpapi.New(httpapi.Options{
-			Version:   version,
-			Readiness: store.Ping,
-			JWKSet:    signer.JWKSet(),
+			Version: version,
+			Readiness: func(ctx context.Context) error {
+				if err := store.Ping(ctx); err != nil {
+					return err
+				}
+				return openFGA.Ping(ctx)
+			},
+			JWKSet: signer.JWKSet(),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
