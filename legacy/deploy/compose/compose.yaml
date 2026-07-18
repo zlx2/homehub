@@ -1,0 +1,580 @@
+name: homehub
+
+services:
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.4.2
+    restart: unless-stopped
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      INFO: "1"
+      NETWORKS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+      AUTH: "0"
+      BUILD: "0"
+      COMMIT: "0"
+      CONFIGS: "0"
+      DISTRIBUTION: "0"
+      EXEC: "0"
+      IMAGES: "0"
+      NODES: "0"
+      PLUGINS: "0"
+      SECRETS: "0"
+      SERVICES: "0"
+      SESSION: "0"
+      SWARM: "0"
+      SYSTEM: "0"
+      TASKS: "0"
+      VOLUMES: "0"
+    networks:
+      - docker-api
+      - agent-api
+    ports:
+      - "127.0.0.1:23750:2375"
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp
+      - /var/lib/haproxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: docker-socket-proxy,localhost,127.0.0.1
+      no_proxy: docker-socket-proxy,localhost,127.0.0.1
+    depends_on:
+      - docker-socket-proxy
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
+      - "10.0.0.15:80:8082"
+      - "10.0.0.15:443:8443"
+    networks:
+      - edge
+      - docker-api
+      - management
+    volumes:
+      - ../traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ../traefik/dynamic:/etc/traefik/dynamic:ro
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/runtime/tls:/run/homehub-tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  control:
+    image: homehub/control:local
+    build:
+      context: ../..
+      dockerfile: apps/control/Dockerfile
+      args:
+        VERSION: ${HOMEHUB_VERSION:-dev}
+        COMMIT: ${HOMEHUB_COMMIT:-unknown}
+        BUILD_TIME: ${HOMEHUB_BUILD_TIME:-unknown}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      HOMEHUB_LISTEN_ADDRESS: :8080
+      HOMEHUB_CATALOG_FILE: /etc/homehub/services.json
+      HOMEHUB_ENVIRONMENT: production
+      HOMEHUB_LOG_LEVEL: info
+      HOMEHUB_HEALTH_INTERVAL: 5s
+      HOMEHUB_HEALTH_TIMEOUT: 2s
+      HOMEHUB_DATABASE_HOST: postgres
+      HOMEHUB_DATABASE_PORT: 5432
+      HOMEHUB_DATABASE_NAME: homehub_control
+      HOMEHUB_DATABASE_USER: homehub_control
+      HOMEHUB_DATABASE_PASSWORD_FILE: /run/secrets/control_db_password
+      HOMEHUB_AUTH_KEY_FILE: /run/secrets/auth_encryption_key
+      HOMEHUB_BOOTSTRAP_TOKEN_FILE: /run/secrets/owner_setup_token
+      HOMEHUB_IDENTITY_SIGNING_KEY_FILE: /run/secrets/identity_signing_key
+      HOMEHUB_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
+      HOMEHUB_SECURE_COOKIES: "true"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: control,traefik,localhost,127.0.0.1
+      no_proxy: control,traefik,localhost,127.0.0.1
+    networks:
+      - edge
+      - backend
+      - data
+      - management
+    volumes:
+      - ../catalog/services.json:/etc/homehub/services.json:ro
+    secrets:
+      - control_db_password
+      - auth_encryption_key
+      - owner_setup_token
+      - source: identity_signing_key_control
+        target: identity_signing_key
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/homehub-control", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-control.entrypoints: web
+      traefik.http.routers.homehub-control.rule: PathPrefix(`/api`) || PathPrefix(`/health`)
+      traefik.http.routers.homehub-control.priority: "100"
+      traefik.http.routers.homehub-control.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.services.homehub-control.loadbalancer.server.port: "8080"
+      traefik.http.routers.homehub-control-public.entrypoints: public-https
+      traefik.http.routers.homehub-control-public.rule: PathPrefix(`/api`) || PathPrefix(`/health`)
+      traefik.http.routers.homehub-control-public.priority: "100"
+      traefik.http.routers.homehub-control-public.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-control-public.service: homehub-control
+      traefik.http.routers.homehub-control-public.tls: "true"
+      homehub.id: homehub-control
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  portal:
+    image: homehub/portal:local
+    build:
+      context: ../..
+      dockerfile: apps/portal/Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-portal.entrypoints: web
+      traefik.http.routers.homehub-portal.rule: PathPrefix(`/`)
+      traefik.http.routers.homehub-portal.priority: "1"
+      traefik.http.routers.homehub-portal.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.services.homehub-portal.loadbalancer.server.port: "8080"
+      traefik.http.routers.homehub-portal-public.entrypoints: public-https
+      traefik.http.routers.homehub-portal-public.rule: PathPrefix(`/`)
+      traefik.http.routers.homehub-portal-public.priority: "1"
+      traefik.http.routers.homehub-portal-public.middlewares: homehub-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-portal-public.service: homehub-portal
+      traefik.http.routers.homehub-portal-public.tls: "true"
+      traefik.http.routers.homehub-http-redirect.entrypoints: public-web
+      traefik.http.routers.homehub-http-redirect.rule: PathPrefix(`/`)
+      traefik.http.routers.homehub-http-redirect.priority: "1"
+      traefik.http.routers.homehub-http-redirect.middlewares: homehub-https-redirect@file
+      traefik.http.routers.homehub-http-redirect.service: homehub-portal
+      homehub.id: homehub-portal
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  hermes-terminal-web:
+    image: homehub/hermes-terminal-web:local
+    build:
+      context: ../..
+      dockerfile: services/hermes-terminal-web/Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,hermes-terminal-web
+      no_proxy: localhost,127.0.0.1,hermes-terminal-web
+    networks:
+      - edge
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:uid=101,gid=101,mode=0750
+      - /var/run:uid=101,gid=101,mode=0750
+      - /tmp:uid=101,gid=101,mode=0750
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-hermes-web.entrypoints: web
+      traefik.http.routers.homehub-hermes-web.rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
+      traefik.http.routers.homehub-hermes-web.priority: "200"
+      traefik.http.routers.homehub-hermes-web.service: homehub-hermes-web
+      traefik.http.routers.homehub-hermes-web-public.entrypoints: public-https
+      traefik.http.routers.homehub-hermes-web-public.rule: Path(`/hermes`) || PathPrefix(`/hermes/`)
+      traefik.http.routers.homehub-hermes-web-public.priority: "200"
+      traefik.http.routers.homehub-hermes-web-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-hermes-security-headers@file
+      traefik.http.routers.homehub-hermes-web-public.tls: "true"
+      traefik.http.services.homehub-hermes-web.loadbalancer.server.port: "8080"
+      homehub.id: hermes-terminal
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  drop:
+    image: homehub/drop:local
+    build:
+      context: ../..
+      dockerfile: services/drop/Dockerfile
+      network: host
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      DROP_LISTEN_ADDRESS: 0.0.0.0:8080
+      DROP_BASE_PATH: /drop
+      DROP_DATA_DIR: /data
+      DROP_IDENTITY_PUBLIC_KEY_FILE: /run/secrets/identity_public_key
+      DROP_ALLOWED_ORIGINS: http://127.0.0.1:18080,https://111.229.205.99
+      DROP_ALLOW_NON_LOOPBACK: "true"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,drop
+      no_proxy: localhost,127.0.0.1,drop
+    networks:
+      - edge
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/drop:/data
+    secrets:
+      - source: identity_public_key
+        target: identity_public_key
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-drop-public.entrypoints: public-https
+      traefik.http.routers.homehub-drop-public.rule: Path(`/drop`) || PathPrefix(`/drop/`)
+      traefik.http.routers.homehub-drop-public.priority: "200"
+      traefik.http.routers.homehub-drop-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-strip-drop@file,homehub-security-headers@file
+      traefik.http.routers.homehub-drop-public.tls: "true"
+      traefik.http.services.homehub-drop.loadbalancer.server.port: "8080"
+      homehub.id: drop
+      homehub.visibility: shared
+      homehub.share-enabled: "true"
+
+  beszel:
+    image: henrygd/beszel:0.18.7
+    restart: unless-stopped
+    depends_on:
+      control:
+        condition: service_healthy
+    user: "65532:65532"
+    environment:
+      APP_URL: https://111.229.205.99/server
+      TRUSTED_AUTH_HEADER: X-HomeHub-Beszel-Email
+      DISABLE_PASSWORD_AUTH: "true"
+      CONTAINER_DETAILS: "false"
+      CHECK_UPDATES: "false"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,beszel
+      no_proxy: localhost,127.0.0.1,beszel
+    networks:
+      - edge
+      - management
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/data:/beszel_data
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/socket:/beszel_socket
+      - ../beszel/config.yml:/beszel_data/config.yml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-beszel-public.entrypoints: public-https
+      traefik.http.routers.homehub-beszel-public.rule: Path(`/server`) || PathPrefix(`/server/`)
+      traefik.http.routers.homehub-beszel-public.priority: "200"
+      traefik.http.routers.homehub-beszel-public.middlewares: homehub-strip-untrusted-identity@file,homehub-forward-auth@file,homehub-strip-server@file,homehub-beszel-security-headers@file,homehub-compress@file
+      traefik.http.routers.homehub-beszel-public.tls: "true"
+      traefik.http.services.homehub-beszel.loadbalancer.server.port: "8090"
+      homehub.id: server-monitor
+      homehub.visibility: owner
+      homehub.share-enabled: "false"
+
+  beszel-agent:
+    image: henrygd/beszel-agent:0.18.7
+    restart: unless-stopped
+    depends_on:
+      - docker-socket-proxy
+    network_mode: host
+    user: "65532:65532"
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      KEY_FILE: /run/secrets/beszel_agent_key
+      DOCKER_HOST: tcp://127.0.0.1:23750
+      DATA_DIR: /var/lib/beszel-agent
+      SKIP_SYSTEMD: "true"
+      SKIP_GPU: "true"
+      SMART_DEVICES: ""
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/agent-data:/var/lib/beszel-agent
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/services/beszel/socket:/beszel_socket
+    secrets:
+      - beszel_agent_key
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/agent", "health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  ai-gateway:
+    image: homehub/ai-gateway:local
+    build:
+      context: ../..
+      dockerfile: services/ai-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      AI_GATEWAY_LISTEN_ADDRESS: 0.0.0.0:8080
+      AI_GATEWAY_CONFIG_FILE: /etc/homehub-ai/providers.json
+      AI_GATEWAY_IDENTITY_PUBLIC_KEY_FILE: /run/secrets/identity_public_key
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,ai-gateway
+      no_proxy: localhost,127.0.0.1,ai-gateway
+    networks:
+      - backend
+      - egress
+    volumes:
+      - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
+    secrets:
+      - source: identity_public_key
+        target: identity_public_key
+      - ai_deepseek_api_key
+      - ai_opencode_go_api_key
+    read_only: true
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/ai-gateway", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  acme-challenge:
+    image: nginx:1.29.8-alpine
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
+    networks:
+      - edge
+    user: "101:101"
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/runtime/acme-webroot:/usr/share/nginx/html:ro
+      - ../acme/nginx.conf:/etc/nginx/nginx.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:uid=101,gid=101,mode=0750
+      - /var/run:uid=101,gid=101,mode=0750
+      - /tmp:uid=101,gid=101,mode=0750
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: homehub-edge
+      traefik.http.routers.homehub-acme.entrypoints: public-web
+      traefik.http.routers.homehub-acme.rule: PathPrefix(`/.well-known/acme-challenge/`)
+      traefik.http.routers.homehub-acme.priority: "1000"
+      traefik.http.services.homehub-acme.loadbalancer.server.port: "8080"
+
+  postgres:
+    image: postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
+      TZ: ${TZ:-Asia/Hong_Kong}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=50
+      - -c
+      - password_encryption=scram-sha-256
+    networks:
+      - data
+    volumes:
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub}/postgres:/var/lib/postgresql
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - postgres_superuser_password
+      - control_db_password_postgres
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  edge:
+    name: homehub-edge
+  backend:
+    name: homehub-backend
+    internal: true
+  data:
+    name: homehub-data
+    internal: true
+  docker-api:
+    name: homehub-docker-api
+    internal: true
+  agent-api:
+    name: homehub-agent-api
+  management:
+    name: homehub-management
+    internal: true
+  egress:
+    name: homehub-egress
+
+secrets:
+  postgres_superuser_password:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/postgres_superuser_password
+  control_db_password:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/control_db_password_control
+  control_db_password_postgres:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/control_db_password_postgres
+  auth_encryption_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/auth_encryption_key
+  owner_setup_token:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/owner_setup_token
+  identity_signing_key_control:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/identity_signing_key_control
+  identity_public_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/identity_public_key
+  beszel_agent_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/beszel_agent_key
+  ai_deepseek_api_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/ai_deepseek_api_key
+  ai_opencode_go_api_key:
+    file: ${HOMEHUB_SECRETS_DIR:-/srv/homehub/runtime/secrets}/ai_opencode_go_api_key

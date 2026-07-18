@@ -1,7 +1,5 @@
 tls:
   certificates:
-    - certFile: /run/homehub-tls/fullchain.pem
-      keyFile: /run/homehub-tls/privkey.pem
     - certFile: /run/homehub-domain-tls/fullchain.pem
       keyFile: /run/homehub-domain-tls/privkey.pem
 
@@ -20,7 +18,7 @@ http:
       service: portal
     redirect:
       entryPoints: [web]
-      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/`)
+      rule: Host(`zlx2.com`) && PathPrefix(`/`)
       priority: 10
       middlewares: [https-redirect]
       service: portal
@@ -33,28 +31,28 @@ http:
       tls: {}
     iam:
       entryPoints: [websecure]
-      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/api/iam/`)
+      rule: Host(`zlx2.com`) && PathPrefix(`/api/iam/`)
       priority: 500
       middlewares: [strip-iam, security, compress]
       service: iam
       tls: {}
     control:
       entryPoints: [websecure]
-      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/api/control/`)
+      rule: Host(`zlx2.com`) && PathPrefix(`/api/control/`)
       priority: 400
       middlewares: [control-audience, control-auth, strip-control, security, compress]
       service: control
       tls: {}
     drop:
       entryPoints: [websecure]
-      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && (Path(`/drop`) || PathPrefix(`/drop/`))
+      rule: Host(`zlx2.com`) && (Path(`/drop`) || PathPrefix(`/drop/`))
       priority: 400
       middlewares: [drop-audience, drop-auth, strip-drop, security, compress]
       service: drop
       tls: {}
     portal:
       entryPoints: [websecure]
-      rule: (Host(`zlx2.com`) || Host(`111.229.205.99`)) && PathPrefix(`/`)
+      rule: Host(`zlx2.com`) && PathPrefix(`/`)
       priority: 1
       middlewares: [security, compress]
       service: portal

@@ -1,5 +1,6 @@
 {
-  "version": 1,
+  "version": 2,
+  "source": "services.yaml",
   "services": [
     {
       "id": "drop",
@@ -13,25 +14,25 @@
     {
       "id": "iam",
       "name": "身份与权限",
-      "description": "HomeHub 身份、令牌与授权中心",
+      "description": "用户、会话、令牌与授权中心",
       "kind": "control-plane",
       "health_url": "http://iam:8080/health/ready",
-      "path": "/identity",
+      "path": "/api/iam",
       "visibility": "owner"
     },
     {
       "id": "control",
       "name": "系统看板",
-      "description": "服务目录与系统状态聚合",
+      "description": "服务状态聚合",
       "kind": "control-plane",
-      "health_url": "http://127.0.0.1:8080/health/ready",
-      "path": "/",
+      "health_url": "http://control:8080/health/ready",
+      "path": "/api/control",
       "visibility": "owner"
     },
     {
       "id": "portal",
       "name": "HomeHub Portal",
-      "description": "React 聚合界面",
+      "description": "登录页与聚合首页",
       "kind": "portal",
       "health_url": "http://portal:8080/health",
       "path": "/",

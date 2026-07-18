@@ -18,26 +18,13 @@ ping:
 
 entryPoints:
   web:
-    address: ":8080"
-    forwardedHeaders:
-      insecure: false
+    address: ":80"
+  websecure:
+    address: ":443"
   admin:
     address: ":8081"
-  public-web:
-    address: ":8082"
-    forwardedHeaders:
-      insecure: false
-  public-https:
-    address: ":8443"
-    forwardedHeaders:
-      insecure: false
 
 providers:
-  docker:
-    endpoint: tcp://docker-socket-proxy:2375
-    exposedByDefault: false
-    network: homehub-edge
-    watch: true
   file:
     directory: /etc/traefik/dynamic
     watch: true
