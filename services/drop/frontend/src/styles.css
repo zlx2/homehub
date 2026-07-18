@@ -599,6 +599,7 @@ img { display: block; max-width: 100%; }
   .attachment-grid { grid-template-columns: minmax(0, 1fr); }
   .attachment-visual, .preview-trigger, .image-link { min-height: 128px; }
   .image-link img { max-height: 280px; }
+  .attachment--image .attachment-download, .lightbox-action--download { display: none; }
   .card-menu { right: 0; left: auto; width: min(220px, calc(100vw - 32px)); padding: 7px; border-radius: 14px; }
   .card-menu--down { top: 38px; bottom: auto; transform-origin: top right; }
   .card-menu--up { top: auto; bottom: 38px; transform-origin: bottom right; }

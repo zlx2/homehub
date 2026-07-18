@@ -2,17 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import AppIcon from "@/components/AppIcon.vue";
-import { isShareCancelled, shareAttachmentFile, usesNativeFileShare } from "@/download";
 import type { Attachment } from "@/types";
 
 const props = defineProps<{
   images: Attachment[];
   initialIndex: number;
 }>();
-const emit = defineEmits<{
-  close: [];
-  toast: [message: string];
-}>();
+const emit = defineEmits<{ close: [] }>();
 
 const index = ref(props.initialIndex);
 const loading = ref(true);
@@ -64,22 +60,6 @@ function handlePointerUp(event: PointerEvent): void {
   distance > 0 ? previous() : next();
 }
 
-async function handleDownload(event: MouseEvent): Promise<void> {
-  if (!usesNativeFileShare()) return;
-  event.preventDefault();
-  emit("toast", "正在准备文件…");
-  try {
-    const result = await shareAttachmentFile(current.value);
-    if (result === "prepared") {
-      emit("toast", "文件已准备好，再点一次即可保存");
-    } else if (result === "unsupported") {
-      emit("toast", "这个文件无法直接分享，请在 Safari 中打开 Drop");
-    }
-  } catch (reason) {
-    if (!isShareCancelled(reason)) emit("toast", "文件保存失败，请重试");
-  }
-}
-
 watch(() => props.initialIndex, (value) => {
   index.value = value;
   resetImageState();
@@ -109,11 +89,10 @@ onBeforeUnmount(() => {
           <span v-if="multiple">{{ index + 1 }} / {{ images.length }} · 左右滑动切换</span>
         </div>
         <a
-          class="lightbox-action"
+          class="lightbox-action lightbox-action--download"
           :href="`${current.download_url}?download=1`"
           :download="current.original_name"
           :aria-label="`下载 ${current.original_name}`"
-          @click="handleDownload"
         ><AppIcon name="download" /></a>
         <button class="lightbox-action" type="button" aria-label="关闭图片预览" @click="emit('close')"><AppIcon name="close" /></button>
       </header>
@@ -130,16 +109,12 @@ onBeforeUnmount(() => {
         <div v-if="loading" class="lightbox-loading"><i></i><span>正在加载预览</span></div>
         <div v-if="failed" class="lightbox-failed">
           <strong>这张图片暂时无法预览</strong>
-          <a
-            :href="`${current.download_url}?download=1`"
-            :download="current.original_name"
-            @click="handleDownload"
-          >下载原图</a>
+          <a :href="`${current.download_url}?download=1`" :download="current.original_name">下载原图</a>
         </div>
         <img
           v-show="!failed"
           :key="current.id"
-          :src="current.preview_url || current.download_url"
+          :src="current.download_url"
           :alt="current.original_name"
           draggable="false"
           @load="loading = false"
