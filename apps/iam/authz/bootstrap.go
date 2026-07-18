@@ -87,6 +87,41 @@ func (client *Client) EnsureModel(ctx context.Context, states StateStore, realmS
 	return state, nil
 }
 
+func (client *Client) WriteRelationship(ctx context.Context, state storepostgres.AuthorizationState, user, relation, object string) error {
+	input := map[string]any{
+		"authorization_model_id": state.ModelID,
+		"writes": map[string]any{"tuple_keys": []map[string]string{{
+			"user": user, "relation": relation, "object": object,
+		}}},
+	}
+	path := "/stores/" + url.PathEscape(state.StoreID) + "/write"
+	if err := client.doJSON(ctx, http.MethodPost, path, input, nil); err != nil {
+		// OpenFGA treats duplicate relationship writes as an error. A positive
+		// check makes startup reconciliation idempotent without deleting tuples.
+		allowed, checkErr := client.Check(ctx, state, user, relation, object)
+		if checkErr == nil && allowed {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (client *Client) Check(ctx context.Context, state storepostgres.AuthorizationState, user, relation, object string) (bool, error) {
+	input := map[string]any{
+		"authorization_model_id": state.ModelID,
+		"tuple_key":              map[string]string{"user": user, "relation": relation, "object": object},
+	}
+	var result struct {
+		Allowed bool `json:"allowed"`
+	}
+	path := "/stores/" + url.PathEscape(state.StoreID) + "/check"
+	if err := client.doJSON(ctx, http.MethodPost, path, input, &result); err != nil {
+		return false, err
+	}
+	return result.Allowed, nil
+}
+
 func (client *Client) modelExists(ctx context.Context, storeID, modelID string) bool {
 	if storeID == "" || modelID == "" {
 		return false

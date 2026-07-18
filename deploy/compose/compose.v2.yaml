@@ -91,6 +91,7 @@ services:
       HOMEHUB_IAM_OPENFGA_URL: http://openfga:8080
       HOMEHUB_IAM_SIGNING_KEY_FILE: /run/secrets/iam_signing_key
       HOMEHUB_IAM_SIGNING_KEY_ID: v2-dev-1
+      HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE: /run/secrets/root_agent_token
     networks:
       - edge
       - backend
@@ -100,6 +101,7 @@ services:
     read_only: true
     volumes:
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_signing_key:/run/secrets/iam_signing_key:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
     tmpfs:
       - /tmp
     healthcheck:

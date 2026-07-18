@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"gitee.com/zlx23/homehub/apps/iam/authz"
+	"gitee.com/zlx23/homehub/apps/iam/internal/bootstrap"
+	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
+	"gitee.com/zlx23/homehub/apps/iam/manifests"
 )
 
 var version = "dev"
@@ -61,6 +64,18 @@ func main() {
 	}
 	slog.Info("OpenFGA authorization model ready", "store_id", authorizationState.StoreID, "model_id", authorizationState.ModelID)
 
+	builtinManifests, err := manifests.Builtin()
+	if err != nil {
+		slog.Error("built-in service manifests are invalid", "error", err)
+		os.Exit(1)
+	}
+	for _, manifest := range builtinManifests {
+		if err := store.SyncManifest(context.Background(), manifest); err != nil {
+			slog.Error("service manifest synchronization failed", "service", manifest.ServiceID, "error", err)
+			os.Exit(1)
+		}
+	}
+
 	signingKeyFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_FILE"))
 	signingKeyID := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_ID"))
 	if signingKeyFile == "" || signingKeyID == "" {
@@ -72,6 +87,20 @@ func main() {
 		slog.Error("IAM signing key initialization failed", "error", err)
 		os.Exit(1)
 	}
+	rootCredentialFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE"))
+	if rootCredentialFile == "" {
+		slog.Error("IAM root agent credential file is required")
+		os.Exit(1)
+	}
+	bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	rootAgent, err := bootstrap.EnsureSystemAgent(bootstrapCtx, store, openFGA, authorizationState, rootCredentialFile)
+	bootstrapCancel()
+	if err != nil {
+		slog.Error("root agent bootstrap failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("root agent ready", "subject", rootAgent.Subject())
+	tokenExchange := exchange.New(store, openFGA, authorizationState, signer)
 
 	server := &http.Server{
 		Addr: address,
@@ -83,7 +112,8 @@ func main() {
 				}
 				return openFGA.Ping(ctx)
 			},
-			JWKSet: signer.JWKSet(),
+			JWKSet:    signer.JWKSet(),
+			Exchanger: tokenExchange,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

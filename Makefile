@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-control test-portal test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
+.PHONY: help status v2-config v2-up v2-check v2-down v2-logs compose-config test-iam test-iam-integration test-control test-portal test-sdk-go test-sdk-rust test-drop test-telegram-bridge test-ai-gateway test-hermes-terminal format-iam format-control format-drop install-bws bws-migrate secrets-sync host-baseline new-service edge-up edge-check dev-up dev-check public-check beszel-bootstrap beszel-check hermes-terminal-install hermes-terminal-check edge-down edge-logs dev-logs
 
 COMPOSE_FILE := deploy/compose/compose.yaml
 ENV_FILE := deploy/compose/.env.example
@@ -45,6 +45,15 @@ test-iam: ## Run HomeHub IAM unit tests in the pinned Go toolchain
 		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
 		-e HTTP_PROXY=http://127.0.0.1:1081 -e HTTPS_PROXY=http://127.0.0.1:1081 \
 		-v "$(CURDIR):/repo" -w /repo/apps/iam golang:1.26.5-alpine3.24 go test ./...
+
+test-iam-integration: ## Exchange and verify a live V2 machine access token
+	@docker run --rm --network host --user $$(id -u):$$(id -g) \
+		-e HOME=/tmp -e GOCACHE=/tmp/go-build \
+		-e HOMEHUB_IAM_INTEGRATION_URL=http://127.0.0.1:18100 \
+		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
+		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-w /repo/apps/iam golang:1.26.5-alpine3.24 go test -count=1 -run TestMachineCredentialExchange ./integration
 
 test-portal: ## Type-check and build the React portal
 	@docker build --network host -f apps/portal/Dockerfile -t homehub/portal:test .
@@ -97,7 +106,7 @@ format-control: ## Format HomeHub Control Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/control:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
 
 format-iam: ## Format HomeHub IAM Go source
-	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/iam:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
+	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/apps/iam:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./authz ./cmd ./integration ./internal ./manifests
 
 edge-up: ## Start the loopback-only Traefik development edge
 	@docker compose $(COMPOSE_ARGS) up -d traefik

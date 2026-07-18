@@ -7,28 +7,61 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
+	"homehub.local/go-sdk/identity"
 )
 
 type Server struct {
 	version   string
 	readiness func(context.Context) error
 	jwkSet    any
+	exchanger *exchange.Service
 }
 
 type Options struct {
 	Version   string
 	Readiness func(context.Context) error
 	JWKSet    any
+	Exchanger *exchange.Service
 }
 
 func New(options Options) http.Handler {
-	server := &Server{version: options.Version, readiness: options.Readiness, jwkSet: options.JWKSet}
+	server := &Server{version: options.Version, readiness: options.Readiness, jwkSet: options.JWKSet, exchanger: options.Exchanger}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", server.health)
 	mux.HandleFunc("GET /health/ready", server.ready)
 	mux.HandleFunc("GET /v1/metadata", server.metadata)
 	mux.HandleFunc("GET /.well-known/jwks.json", server.jwks)
+	mux.HandleFunc("POST /v1/tokens/exchange", server.exchangeToken)
 	return server.middleware(mux)
+}
+
+func (server *Server) exchangeToken(response http.ResponseWriter, request *http.Request) {
+	if server.exchanger == nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	credential, err := identity.BearerToken(request)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
+		return
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, 16<<10)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var input exchange.Request
+	if err := decoder.Decode(&input); err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+	result, err := server.exchanger.Exchange(request.Context(), credential, request.Header.Get("X-Request-ID"), input)
+	if err != nil {
+		writeJSON(response, exchange.HTTPStatus(err), map[string]string{"error": exchange.ErrorCode(err)})
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	writeJSON(response, http.StatusOK, result)
 }
 
 func (server *Server) jwks(response http.ResponseWriter, _ *http.Request) {
@@ -76,6 +109,7 @@ func (server *Server) middleware(next http.Handler) http.Handler {
 			}
 		}
 		response.Header().Set("X-Request-ID", requestID)
+		request.Header.Set("X-Request-ID", requestID)
 		response.Header().Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(response, request)
 	})
