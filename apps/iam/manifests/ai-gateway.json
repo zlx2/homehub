@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "service_id": "ai-gateway",
+  "audience": "homehub-ai-gateway",
+  "max_token_ttl_seconds": 120,
+  "permissions": [
+    {"name": "ai.model.fast", "description": "Use the fast model alias", "risk": "normal", "required_relation": "caller"},
+    {"name": "ai.model.reasoning", "description": "Use the reasoning model alias", "risk": "sensitive", "required_relation": "caller"},
+    {"name": "ai.model.coding", "description": "Use the coding model alias", "risk": "normal", "required_relation": "caller"}
+  ]
+}

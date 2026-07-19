@@ -7,8 +7,7 @@
 - Gitee 远端：`git@gitee.com:zlx23/homehub.git`。
 - 探索阶段，允许短暂停机和重建容器，但必须明确操作范围。
 - 不要停止或改造仓库外的 MySQL、Redis、Hermes Agent 或其它既有容器。
-- 不要读取、打印或提交 `.env.v2`、BWS Token、Bot Token、机器凭据、证书私钥和数据库内容。
-- V1 已归档至 `legacy/`，不再维护。
+- 不要读取、打印或提交 `.env`、BWS Token、Bot Token、机器凭据、证书私钥和数据库内容。
 
 推荐直接在服务器开发和验证。
 
@@ -18,6 +17,7 @@
 cd /home/ubuntu/homehub-v2
 
 make config     # 校验配置
+make build      # 只编译，不运行测试
 make up         # 构建并启动
 make check      # 健康检查
 make logs       # 日志
@@ -28,12 +28,12 @@ make down       # 停止
 
 ```sh
 docker compose \
-  --env-file deploy/compose/.env.v2 \
+  --env-file deploy/compose/.env \
   -f deploy/compose/compose.yaml \
   build drop portal
 
 docker compose \
-  --env-file deploy/compose/.env.v2 \
+  --env-file deploy/compose/.env \
   -f deploy/compose/compose.yaml \
   up -d --no-deps drop portal
 ```
@@ -61,6 +61,7 @@ docker compose \
 | Portal | `make test-portal` | TS 检查与构建 |
 | Drop | `make test-drop` | API、附件、权限、有效期 |
 | Drop 集成 | `make test-drop-integration` | 实际上传读取删除 |
+| AI Gateway | `make build-ai-gateway` | 编译内网模型路由 |
 | Telegram Bridge | `make test-telegram-bridge` | allowlist、幂等 |
 | Telegram 集成 | `make test-telegram-bridge-integration` | 只能创建不能读 |
 | Go SDK | `make test-sdk-go` | token 验证 SDK |
@@ -103,8 +104,6 @@ npm ci && npm run check && npm run build
 9. Dockerfile、Compose 定义、Control catalog 项。
 10. 单元测试 + 真实身份集成测试。
 
-`make new-service` 脚手架已禁用，等待适配 services.yaml 后重新启用。
-
 ## 7. 身份接入
 
 ### 浏览器访问
@@ -143,8 +142,8 @@ BWS 将 secret 写入 `/srv/homehub-v2/runtime`。容器只挂载自己需要的
 ## 9. 诊断
 
 ```sh
-docker compose --env-file deploy/compose/.env.v2 -f deploy/compose/compose.yaml ps
-docker compose --env-file deploy/compose/.env.v2 -f deploy/compose/compose.yaml logs --tail=200 drop
+docker compose --env-file deploy/compose/.env -f deploy/compose/compose.yaml ps
+docker compose --env-file deploy/compose/.env -f deploy/compose/compose.yaml logs --tail=200 drop
 
 curl -fsS http://127.0.0.1:18100/health/ready
 curl -fsS http://127.0.0.1:18110/health/ready

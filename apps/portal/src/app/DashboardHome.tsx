@@ -1,20 +1,14 @@
 import {
-  Bot,
   Box,
   Boxes,
   ChevronRight,
-  Clock3,
-  Cpu,
   Droplets,
   Gauge,
-  HardDrive,
   House,
   KeyRound,
-  MemoryStick,
   Network,
   Search,
   Send,
-  ServerCog,
   ShieldCheck,
   X,
   type LucideIcon,
@@ -52,13 +46,12 @@ type Service = {
 };
 
 const serviceDefinitions: Service[] = [
-  { id: 'hermes', catalogId: 'hermes-terminal', name: 'Hermes', summary: '网页终端', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Bot, tone: 'cyan', route: '/hermes/' },
   { id: 'drop', catalogId: 'drop', name: 'Drop', summary: '文本与原始文件', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Droplets, tone: 'sky', route: '/drop/' },
-  { id: 'telegram', name: 'Telegram', summary: '消息转发到 Drop', status: 'healthy', statusLabel: '运行中', section: 'common', icon: Send, tone: 'blue' },
+  { id: 'telegram', catalogId: 'telegram-bridge', name: 'Telegram', summary: '消息转发到 Drop', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Send, tone: 'blue' },
   { id: 'ai', catalogId: 'ai-gateway', name: 'AI Gateway', summary: 'DeepSeek · OpenCode', status: 'stopped', statusLabel: '检查中', section: 'common', icon: Network, tone: 'teal' },
-  { id: 'server', catalogId: 'server-monitor', name: '服务器面板', summary: '资源与容器监控', status: 'stopped', statusLabel: '检查中', section: 'other', icon: ServerCog, tone: 'cyan', route: '/server/' },
-  { id: 'control', catalogId: 'homehub-control', name: 'HomeHub Control', summary: '身份、权限与服务目录', status: 'stopped', statusLabel: '检查中', section: 'other', icon: ShieldCheck, tone: 'sky', route: '/security', spa: true },
-  { id: 'edge', catalogId: 'homehub-edge', name: 'HomeHub Edge', summary: 'Traefik 入口与路由', status: 'stopped', statusLabel: '检查中', section: 'other', icon: Gauge, tone: 'slate' },
+  { id: 'iam', catalogId: 'iam', name: 'HomeHub IAM', summary: '身份、会话与权限', status: 'stopped', statusLabel: '检查中', section: 'other', icon: KeyRound, tone: 'cyan', route: '/security', spa: true },
+  { id: 'control', catalogId: 'control', name: 'HomeHub Control', summary: '服务状态聚合', status: 'stopped', statusLabel: '检查中', section: 'other', icon: ShieldCheck, tone: 'sky' },
+  { id: 'portal', catalogId: 'portal', name: 'HomeHub Portal', summary: '登录页与聚合首页', status: 'stopped', statusLabel: '检查中', section: 'other', icon: Gauge, tone: 'slate' },
 ];
 
 const filters: Array<{ value: Filter; label: string }> = [
@@ -71,19 +64,6 @@ function normalizeStatus(state?: string): Pick<Service, 'status' | 'statusLabel'
   if (state === 'healthy') return { status: 'healthy', statusLabel: '正常' };
   if (state === 'degraded' || state === 'warning') return { status: 'warning', statusLabel: '异常' };
   return { status: 'stopped', statusLabel: state ? '不可用' : '检查中' };
-}
-
-function Metric({ icon: Icon, label, value, progress, warning = false }: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  progress: number;
-  warning?: boolean;
-}) {
-  return <div className={`dashboard-metric ${warning ? 'dashboard-metric-warning' : ''}`}>
-    <div className="dashboard-metric-topline"><span><Icon size={18} strokeWidth={1.8}/>{label}</span><strong>{value}</strong></div>
-    <div className="dashboard-metric-track" aria-hidden="true"><span style={{ width: `${progress}%` }}/></div>
-  </div>;
 }
 
 function ServiceCard({ service, open }: { service: Service; open: (service: Service) => void }) {
@@ -142,11 +122,8 @@ export function DashboardHome({ name, navigate }: { name: string; navigate: (pat
 
       <main>
         <section className="dashboard-server-card" aria-label="服务器概况">
-          <div className="dashboard-server-identity"><span className="dashboard-server-icon"><Box size={30} strokeWidth={1.45}/></span><span className="dashboard-server-copy"><span className="dashboard-server-name"><strong>hermes</strong><i/></span><span>4 核 · 3.6 GB</span></span></div>
-          <Metric icon={Cpu} label="CPU" value="18%" progress={18}/>
-          <Metric icon={MemoryStick} label="内存" value="31%" progress={31}/>
-          <Metric icon={HardDrive} label="磁盘" value="75%" progress={75} warning/>
-          <div className="dashboard-uptime"><Clock3 size={20} strokeWidth={1.75}/><span><small>已运行</small><strong>12 天</strong></span></div>
+          <div className="dashboard-server-identity"><span className="dashboard-server-icon"><Box size={30} strokeWidth={1.45}/></span><span className="dashboard-server-copy"><span className="dashboard-server-name"><strong>HomeHub</strong><i/></span><span>V2 单栈</span></span></div>
+          <div className="dashboard-uptime"><Gauge size={20} strokeWidth={1.75}/><span><small>服务健康</small><strong>{overview?.summary?.healthy_services ?? 0} / {overview?.summary?.total_services ?? 0}</strong></span></div>
         </section>
 
         <section className="dashboard-services-panel" aria-labelledby="dashboard-services-title">

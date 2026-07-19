@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Bot, Boxes, Gauge, HardDriveUpload, Server, Sparkles } from 'lucide-react';
+import { Boxes, Gauge, HardDriveUpload, Sparkles } from 'lucide-react';
 
 export type HomeHubModule = {
   id: string;
@@ -34,34 +34,14 @@ export const modules: HomeHubModule[] = [
     status: 'available',
   },
   {
-    id: 'hermes',
-    title: 'Hermes',
-    description: '随时打开你的服务器管家与历史会话。',
-    path: '/hermes',
-    icon: Bot,
-    accent: '#f2d888',
-    requiredPermissions: ['hermes.session.use'],
-    status: 'building',
-  },
-  {
-    id: 'server',
-    title: '服务器',
-    description: '资源、容器、网络和系统状态。',
-    path: '/server',
-    icon: Server,
-    accent: '#c4a7ff',
-    requiredPermissions: ['server.metrics.read'],
-    status: 'building',
-  },
-  {
     id: 'ai',
     title: 'AI Gateway',
     description: '模型路由、用量和流式调用状态。',
     path: '/ai',
     icon: Sparkles,
     accent: '#ff9eb5',
-    requiredPermissions: ['ai.gateway.read'],
-    status: 'building',
+    requiredPermissions: ['ai.model.fast'],
+    status: 'available',
   },
 ];
 

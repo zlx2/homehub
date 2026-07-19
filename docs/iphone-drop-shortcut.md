@@ -22,7 +22,7 @@ Add these actions in order:
 
 1. **Generate UUID**.
 2. **Get Contents of URL**:
-   - URL: `https://111.229.205.99/drop/api/v1/items`
+   - URL: `https://zlx2.com/drop/v1/items`
    - Method: `POST`
    - Header `Authorization`: `Bearer hht_your_token_here`
    - Header `Idempotency-Key`: the generated UUID

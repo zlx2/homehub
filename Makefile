@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help status config up check down logs test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-drop-integration test-telegram-bridge test-telegram-bridge-integration format-iam format-control format-drop format-telegram-bridge install-bws secrets-sync host-baseline new-service
+.PHONY: help status config up check down logs build build-ai-gateway test-iam test-iam-integration test-control test-control-integration test-portal test-sdk-go test-sdk-rust test-drop test-drop-integration test-telegram-bridge test-telegram-bridge-integration format-iam format-control format-drop format-ai-gateway format-telegram-bridge install-bws secrets-sync host-baseline
 
-ENV_FILE := deploy/compose/.env.v2
+ENV_FILE := deploy/compose/.env
 COMPOSE_FILE := deploy/compose/compose.yaml
 COMPOSE_ARGS := --env-file $(ENV_FILE) -f $(COMPOSE_FILE)
 
@@ -31,7 +31,17 @@ down: ## Stop all services without deleting data
 	@docker compose $(COMPOSE_ARGS) down
 
 logs: ## Follow all service logs
-	@docker compose $(COMPOSE_ARGS) logs -f iam control drop telegram-bridge openfga postgres portal
+	@docker compose $(COMPOSE_ARGS) logs -f iam control ai-gateway drop telegram-bridge openfga postgres portal
+
+build: ## Compile every application without running tests
+	@docker compose $(COMPOSE_ARGS) build
+	@docker run --rm --network host --user $$(id -u):$$(id -g) \
+		-e HOME=/tmp -e CARGO_HOME=/tmp/cargo -e CARGO_TARGET_DIR=/tmp/target \
+		-e HTTP_PROXY=http://127.0.0.1:1081 -e HTTPS_PROXY=http://127.0.0.1:1081 \
+		-v "$(CURDIR)/packages/rust-sdk:/src" -w /src rust:1.97-alpine3.24 cargo build
+
+build-ai-gateway: ## Compile the AI Gateway
+	@docker build --network host -f services/ai-gateway/Dockerfile -t homehub/ai-gateway:build .
 
 test-control: ## Run Control unit tests
 	@docker run --rm --user $$(id -u):$$(id -g) -e HOME=/tmp -e GOCACHE=/tmp/go-build \
@@ -117,6 +127,9 @@ format-control: ## Format Control Go source
 format-drop: ## Format Drop Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/drop:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
 
+format-ai-gateway: ## Format AI Gateway Go source
+	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR):/repo" -w /repo/services/ai-gateway golang:1.26.5-alpine3.24 gofmt -w ./cmd ./internal
+
 format-telegram-bridge: ## Format Telegram Bridge Go source
 	@docker run --rm --user $$(id -u):$$(id -g) -v "$(CURDIR)/services/telegram-bridge:/src" -w /src golang:1.26.5-alpine3.24 gofmt -w ./cmd ./integration ./internal
 
@@ -128,10 +141,3 @@ secrets-sync: ## Materialize runtime secret files from Bitwarden
 
 host-baseline: ## Install host firewall and logging
 	@sudo ./deploy/scripts/install-host-baseline.sh
-
-# ═══════════════════════════════════════════════════════
-# new-service is DISABLED — needs rewrite for V2 manifest
-# ═══════════════════════════════════════════════════════
-# new-service: ## Generate a service (DISABLED — pending V2 rewrite)
-# 	@test -n "$(NAME)" || (echo "NAME is required" >&2; exit 1)
-# 	@python3 ./deploy/scripts/new-service.py --name "$(NAME)" --lang "$(LANG)" --visibility "$(or $(VISIBILITY),owner)"

@@ -17,7 +17,7 @@
 - Use Go 1.26.5 for HomeHub Control and infrastructure-oriented services.
 - Use Rust stable 1.97 with Edition 2024 for suitable business microservices.
 - Use React 19, TypeScript, and Vite for the portal.
-- V1 is archived under `legacy/` and no longer maintained.
+- The repository contains only the active HomeHub stack; do not reintroduce archived implementations.
 - Start with REST and JSON for service APIs.
 - Use SSE for streaming AI responses.
 - Define public and internal API contracts with OpenAPI 3.1.

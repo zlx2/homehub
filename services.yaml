@@ -60,6 +60,19 @@ services:
     kind: bridge
     route: null
     visibility: internal
-    health: http://127.0.0.1:8730/health/ready
+    health: http://host.docker.internal:8730/health/ready
     permissions:
       - drop.item.create
+
+  - id: ai-gateway
+    name: AI Gateway
+    description: 内网 AI 模型路由与 SSE 流式代理
+    audience: homehub-ai-gateway
+    kind: infrastructure-service
+    route: null
+    visibility: internal
+    health: http://ai-gateway:8080/health/ready
+    permissions:
+      - ai.model.fast
+      - ai.model.reasoning
+      - ai.model.coding

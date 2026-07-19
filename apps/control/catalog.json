@@ -3,6 +3,15 @@
   "source": "services.yaml",
   "services": [
     {
+	  "id": "ai-gateway",
+	  "name": "AI Gateway",
+	  "description": "内网 AI 模型路由与 SSE 流式代理",
+	  "kind": "infrastructure-service",
+	  "health_url": "http://ai-gateway:8080/health/ready",
+	  "path": "/internal/ai-gateway",
+	  "visibility": "owner"
+	},
+	{
       "id": "drop",
       "name": "Drop",
       "description": "原图与文本临时中转服务",
@@ -36,6 +45,15 @@
       "kind": "portal",
       "health_url": "http://portal:8080/health",
       "path": "/",
+      "visibility": "owner"
+    },
+    {
+      "id": "telegram-bridge",
+      "name": "Telegram Bridge",
+      "description": "Telegram 消息转发到 Drop",
+      "kind": "bridge",
+      "health_url": "http://host.docker.internal:8730/health/ready",
+      "path": "/internal/telegram-bridge",
       "visibility": "owner"
     }
   ]

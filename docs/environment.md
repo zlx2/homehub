@@ -33,8 +33,8 @@ Existing public services outside V2 remain on MySQL `42061` and Redis `38291`.
 
 ## Runtime notes
 
-- The active V2 deployment is `deploy/compose/compose.v2.yaml` with the ignored
-  environment file `deploy/compose/.env.v2`.
+- The active deployment is `deploy/compose/compose.yaml` with the ignored
+  environment file `deploy/compose/.env`.
 - The Docker daemon may inject an HTTP proxy pointing at host
   `127.0.0.1:1081`. Bridge containers cannot use that address as the host unless
   they use host networking; otherwise internal names must be in `NO_PROXY` or

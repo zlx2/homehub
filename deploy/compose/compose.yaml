@@ -121,9 +121,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${V2_POSTGRES_PASSWORD:?set V2_POSTGRES_PASSWORD}
-      HOMEHUB_IAM_DB_PASSWORD: ${V2_IAM_DB_PASSWORD:?set V2_IAM_DB_PASSWORD}
-      OPENFGA_DB_PASSWORD: ${V2_OPENFGA_DB_PASSWORD:?set V2_OPENFGA_DB_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
+      HOMEHUB_IAM_DB_PASSWORD_FILE: /run/secrets/iam_db_password
+      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
       HOMEHUB_DROP_DB_PASSWORD_FILE: /run/secrets/drop_db_password
       TZ: ${TZ:-Asia/Hong_Kong}
     command:
@@ -140,6 +140,9 @@ services:
       - postgres-data:/var/lib/postgresql
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/postgres_superuser_password:/run/secrets/postgres_superuser_password:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -150,41 +153,53 @@ services:
       - no-new-privileges:true
 
   openfga-migrate:
-    image: openfga/openfga:v1.15.1
+    build:
+      context: .
+      dockerfile: openfga.Dockerfile
+    image: homehub/openfga:v2-wrapper
     depends_on:
       postgres:
         condition: service_healthy
-    command: migrate
+    command: ["migrate"]
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://homehub_openfga:${V2_OPENFGA_DB_PASSWORD}@postgres:5432/homehub_openfga?sslmode=disable
+      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
+      TZ: ${TZ:-Asia/Hong_Kong}
     networks:
       - data
+    volumes:
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     restart: "no"
     security_opt:
       - no-new-privileges:true
 
   openfga:
-    image: openfga/openfga:v1.15.1
+    build:
+      context: .
+      dockerfile: openfga.Dockerfile
+    image: homehub/openfga:v2-wrapper
     restart: unless-stopped
     depends_on:
       openfga-migrate:
         condition: service_completed_successfully
-    command: run
+    command: ["run"]
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://homehub_openfga:${V2_OPENFGA_DB_PASSWORD}@postgres:5432/homehub_openfga?sslmode=disable
+      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
       OPENFGA_LOG_FORMAT: json
       OPENFGA_HTTP_ADDR: 0.0.0.0:8080
       OPENFGA_GRPC_ADDR: 0.0.0.0:8081
       OPENFGA_PLAYGROUND_ENABLED: "false"
       OPENFGA_DATASTORE_MAX_OPEN_CONNS: "5"
       OPENFGA_DATASTORE_MAX_IDLE_CONNS: "1"
+      TZ: ${TZ:-Asia/Hong_Kong}
     networks:
       - backend
       - data
     ports:
       - "127.0.0.1:18101:8080"
+    volumes:
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     security_opt:
       - no-new-privileges:true
 
@@ -204,7 +219,7 @@ services:
         condition: service_started
     environment:
       HOMEHUB_IAM_LISTEN_ADDRESS: :8080
-      HOMEHUB_IAM_DATABASE_URL: postgres://homehub_iam:${V2_IAM_DB_PASSWORD}@postgres:5432/homehub_iam?sslmode=disable
+      HOMEHUB_IAM_DATABASE_PASSWORD_FILE: /run/secrets/iam_db_password
       HOMEHUB_IAM_OPENFGA_URL: http://openfga:8080
       HOMEHUB_IAM_SIGNING_KEY_FILE: /run/secrets/iam_signing_key
       HOMEHUB_IAM_SIGNING_KEY_ID: v2-dev-1
@@ -227,6 +242,7 @@ services:
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/auth_encryption_key:/run/secrets/auth_encryption_key:ro
       - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/owner_setup_token:/run/secrets/owner_setup_token:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
     tmpfs:
       - /tmp
     healthcheck:
@@ -263,6 +279,8 @@ services:
       - backend
     ports:
       - "127.0.0.1:18110:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs:
       - /tmp
@@ -271,6 +289,41 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  ai-gateway:
+    image: homehub/ai-gateway:v2-local
+    build:
+      context: ../..
+      dockerfile: services/ai-gateway/Dockerfile
+      network: host
+    restart: unless-stopped
+    depends_on:
+      iam:
+        condition: service_healthy
+    environment:
+      AI_GATEWAY_LISTEN_ADDRESS: :8080
+      AI_GATEWAY_IAM_JWKS_URL: http://iam:8080/.well-known/jwks.json
+      AI_GATEWAY_CONFIG_FILE: /etc/homehub-ai/providers.json
+    networks:
+      - backend
+      - egress
+    read_only: true
+    volumes:
+      - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/ai_deepseek_api_key:/run/secrets/ai_deepseek_api_key:ro
+      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/ai_opencode_go_api_key:/run/secrets/ai_opencode_go_api_key:ro
+    tmpfs:
+      - /tmp:uid=65532,gid=65532,mode=0700
+    healthcheck:
+      test: ["CMD", "/ai-gateway", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
       start_period: 10s
     security_opt:
       - no-new-privileges:true
@@ -408,6 +461,8 @@ networks:
   backend:
     name: homehub-v2-backend
     internal: true
+  egress:
+    name: homehub-v2-egress
   data:
     name: homehub-v2-data
     internal: true

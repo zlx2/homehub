@@ -3,8 +3,8 @@
 ```sh
 cd /home/ubuntu/homehub-v2
 
-cp deploy/compose/.env.example deploy/compose/.env.v2   # first time only
-# edit .env.v2 with real passwords
+cp deploy/compose/.env.example deploy/compose/.env   # first time only
+# edit .env with local runtime values; never commit it
 
 make config     # validate
 make up         # build + start
@@ -22,4 +22,4 @@ make install-bws
 make secrets-sync
 ```
 
-Never place secret values in `.env.v2`, Compose files, Git, shell history, or logs.
+Never place secret values in Compose files, Git, shell history, or logs.

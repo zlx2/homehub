@@ -58,7 +58,7 @@ func Load(path string) ([]Service, error) {
 		return nil, errors.New("read service catalog")
 	}
 	var document Document
-	if json.Unmarshal(contents, &document) != nil || document.Version != 1 || len(document.Services) == 0 {
+	if json.Unmarshal(contents, &document) != nil || document.Version != 2 || len(document.Services) == 0 {
 		return nil, errors.New("invalid service catalog")
 	}
 	seen := make(map[string]struct{}, len(document.Services))

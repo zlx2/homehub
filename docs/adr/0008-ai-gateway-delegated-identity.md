@@ -1,35 +1,10 @@
-# ADR 0008: Delegated identity for the AI Gateway
+# ADR 0008: AI Gateway 身份与模型权限
 
-## Status
+- Status: Accepted
+- Date: 2026-07-19
 
-Accepted; implementation and tests exist, but AI Gateway is not deployed in the
-active V2 Compose stack as of 2026-07-19.
+AI Gateway 只连接 `backend` 和 `egress` 网络，没有宿主机端口和 Traefik 公网路由。调用者必须从 IAM 获取 audience 为 `homehub-ai-gateway` 的短期 Ed25519 access token。
 
-## Decision
+模型白名单由三个具体权限表达：`ai.model.fast`、`ai.model.reasoning`和 `ai.model.coding`。Gateway 仅返回和调用 token 权限交集中的模型；`system.root` 可访问所有配置模型。
 
-Browser-to-service identities stay bound to exactly one audience. Business
-services must not forward their own token to the AI Gateway and the AI Gateway
-must not relax audience validation.
-
-For a catalog service with `ai_enabled=true`, HomeHub Control returns a second
-`X-HomeHub-AI-Identity` header from ForwardAuth. This token has `ai-gateway` as
-its audience, identifies the source service with `azp`, carries the user
-subject, includes the `ai.use` scope, and embeds the exact model aliases allowed
-by the service catalog. It expires after 60 seconds.
-
-Traefik removes all client-supplied HomeHub identity headers before ForwardAuth
-injects trusted values. The source service forwards only the delegated token as
-`X-HomeHub-Identity` on the internal AI request.
-
-Only Control holds the Ed25519 signing key. Provider API credentials remain in
-Bitwarden and are mounted only into the AI Gateway. The gateway is connected to
-the internal backend network and a dedicated outbound network, has no host port,
-and has no Traefik route.
-
-## Consequences
-
-- Browser clients cannot call the AI Gateway directly.
-- A normal service identity cannot be replayed at the AI Gateway.
-- A delegated token cannot use a model absent from its signed policy.
-- Provider keys never enter business-service containers.
-- Provider routing can change behind stable aliases without changing services.
+上游 provider 密钥由 Bitwarden 物化为只读文件，只挂载到 AI Gateway。Gateway 重写稳定别名为上游模型名，且支持 SSE 透传。

@@ -8,7 +8,7 @@ HomeHub 是部署在个人服务器上的服务聚合平台：统一公网入口
 
 - Traefik 3.7：公网路由、TLS 和前置鉴权
 - Cloudflare Tunnel：公网入口
-- Go 1.26.5：IAM、Control、Drop、Telegram Bridge
+- Go 1.26.5：IAM、Control、AI Gateway、Drop、Telegram Bridge
 - React 19 + TypeScript + Vite：Portal 与 Drop 独立前端
 - PostgreSQL 18：持久数据，每服务独立数据库和用户
 - OpenFGA：关系型授权
@@ -23,6 +23,7 @@ apps/
   control/             服务状态聚合
   portal/              HomeHub 登录页与聚合首页
 services/
+  ai-gateway/          内网模型路由与 SSE 代理
   drop/                原始文件中转服务和独立 React 页面
   telegram-bridge/     Telegram → Drop 转发
 packages/
@@ -33,7 +34,6 @@ deploy/
   traefik/             公网路由配置
   postgres/            数据库初始化脚本
   scripts/             部署与密钥管理脚本
-legacy/                V1 架构历史参考（不再维护）
 docs/                  架构、ADR、开发和运维文档
 services.yaml          统一服务元数据（IAM manifest / Control catalog / Traefik routes 的事实源）
 ```
@@ -44,6 +44,7 @@ services.yaml          统一服务元数据（IAM manifest / Control catalog / 
 cd /home/ubuntu/homehub-v2
 
 make config              # 校验 Compose
+make build               # 只编译 Go/Rust/React，不运行测试
 make up                  # 构建并启动完整栈
 make check               # 健康检查
 make logs                # 查看日志

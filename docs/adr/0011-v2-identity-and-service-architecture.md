@@ -10,8 +10,8 @@ also introduced entry-point-specific tokens such as an iPhone upload token and
 a Telegram Drop token. That model does not scale cleanly to many workloads,
 devices, agents, groups, and object-level sharing relationships.
 
-All current HomeHub data is non-production test data. V2 therefore has no
-compatibility requirement for V1 sessions, tokens, schemas, or APIs.
+The platform is intentionally a single IAM-native stack; earlier session,
+token, schema, and API formats are outside its compatibility contract.
 
 ## Decision
 
@@ -57,7 +57,6 @@ changing relationships, or evaluating genuinely dynamic cross-resource access.
 
 ## Consequences
 
-V1 data and token compatibility are intentionally removed. IAM becomes a
-separate availability boundary, while ordinary business traffic remains able
+IAM is a separate availability boundary, while ordinary business traffic remains able
 to proceed with already-issued short-lived tokens. New services register a
 versioned service manifest instead of requiring IAM conditionals.

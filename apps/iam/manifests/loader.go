@@ -17,8 +17,11 @@ var controlJSON []byte
 //go:embed drop.json
 var dropJSON []byte
 
+//go:embed ai-gateway.json
+var aiGatewayJSON []byte
+
 func Builtin() ([]domain.ServiceManifest, error) {
-	inputs := [][]byte{iamJSON, controlJSON, dropJSON}
+	inputs := [][]byte{iamJSON, controlJSON, dropJSON, aiGatewayJSON}
 	result := make([]domain.ServiceManifest, 0, len(inputs))
 	for _, input := range inputs {
 		var manifest domain.ServiceManifest

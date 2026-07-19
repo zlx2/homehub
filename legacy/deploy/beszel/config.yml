@@ -1,5 +1,0 @@
-systems:
-  - name: hermes
-    host: /beszel_socket/beszel.sock
-    users:
-      - owner@homehub.local

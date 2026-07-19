@@ -27,9 +27,9 @@ browser edge and exchange their own machine credential directly with IAM.
 
 ## Configuration ownership
 
-- `deploy/compose/compose.v2.yaml`: runtime services, networks, mounts, loopback
+- `deploy/compose/compose.yaml`: runtime services, networks, mounts, loopback
   ports, and health checks.
-- `deploy/traefik-v2`: public hosts, paths, TLS, header cleanup, and ForwardAuth.
+- `deploy/traefik`: public hosts, paths, TLS, header cleanup, and ForwardAuth.
 - Bitwarden Secrets Manager: credentials, signing keys, provider API keys, bot
   tokens, and tunnel token source material.
 - IAM database: principals, sessions, credentials, grants, delegation, and
@@ -45,6 +45,7 @@ browser edge and exchange their own machine credential directly with IAM.
 - `homehub-v2-backend`: internal service APIs and IAM/OpenFGA communication;
   marked internal.
 - `homehub-v2-data`: PostgreSQL and authorized clients; marked internal.
+- `homehub-v2-egress`: outbound provider access for AI Gateway only.
 - Telegram Bridge currently uses host networking only to reach the host Mihomo
   proxy and loopback V2 endpoints.
 - PostgreSQL and OpenFGA are not public.

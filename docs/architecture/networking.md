@@ -11,7 +11,7 @@ Origin Server Name. Traefik presents the domain certificate and redirects
 `www.zlx2.com` to the apex domain.
 
 The connector token is stored in Bitwarden Secrets Manager and materialized as
-a read-only runtime file. It is not stored in Compose, `.env.v2`, or Git.
+a read-only runtime file. It is not stored in Compose, `.env`, or Git.
 
 ## Docker networks
 
@@ -19,7 +19,7 @@ a read-only runtime file. It is not stored in Compose, `.env.v2`, or Git.
 
 Members: Traefik, Cloudflared, ACME Challenge, IAM, Control, Drop, and Portal.
 Only Traefik publishes public ports. Services on this network are reachable
-publicly only when `deploy/traefik-v2/dynamic/routes.yaml` defines a router.
+publicly only when `deploy/traefik/dynamic/routes.yaml` defines a router.
 
 ### `homehub-v2-backend`
 

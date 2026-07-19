@@ -50,7 +50,7 @@ lived token for each active upload window.
    Telegram does not apply the change immediately.
 
 Comma-separated IDs are accepted. The server currently loads these non-secret
-values from the ignored `deploy/compose/.env.v2` file.
+values from the ignored `deploy/compose/.env` file.
 
 ## Development
 

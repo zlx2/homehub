@@ -197,6 +197,7 @@ func splitCSV(value string) []string {
 }
 
 func databaseURLFromEnvironment() (string, error) {
+	// Full URL from a file (existing behaviour)
 	if path := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL_FILE")); path != "" {
 		contents, err := os.ReadFile(path)
 		if err != nil {
@@ -207,10 +208,29 @@ func databaseURLFromEnvironment() (string, error) {
 		}
 		return "", errors.New("IAM database URL file is empty")
 	}
+	// Full URL from environment (existing behaviour, deprecated in favour of file)
 	if value := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL")); value != "" {
 		return value, nil
 	}
-	return "", errors.New("HOMEHUB_IAM_DATABASE_URL_FILE or HOMEHUB_IAM_DATABASE_URL is required")
+	// Password-file based URL construction
+	if passwordFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_PASSWORD_FILE")); passwordFile != "" {
+		passwordBytes, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return "", err
+		}
+		password := strings.TrimSpace(string(passwordBytes))
+		if password == "" {
+			return "", errors.New("IAM database password file is empty")
+		}
+		host := environmentOrDefault("HOMEHUB_IAM_DATABASE_HOST", "postgres")
+		port := environmentOrDefault("HOMEHUB_IAM_DATABASE_PORT", "5432")
+		user := environmentOrDefault("HOMEHUB_IAM_DATABASE_USER", "homehub_iam")
+		dbname := environmentOrDefault("HOMEHUB_IAM_DATABASE_NAME", "homehub_iam")
+		sslmode := environmentOrDefault("HOMEHUB_IAM_DATABASE_SSLMODE", "disable")
+		url := "postgres://" + user + ":" + password + "@" + host + ":" + port + "/" + dbname + "?sslmode=" + sslmode
+		return url, nil
+	}
+	return "", errors.New("HOMEHUB_IAM_DATABASE_PASSWORD_FILE, HOMEHUB_IAM_DATABASE_URL_FILE, or HOMEHUB_IAM_DATABASE_URL is required")
 }
 
 func healthcheck() {

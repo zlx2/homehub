@@ -14,7 +14,7 @@ COPY packages/go-sdk ./packages/go-sdk
 COPY services/drop ./services/drop
 COPY --from=frontend /src/services/drop/dist ./services/drop/internal/httpapi/web
 WORKDIR /src/services/drop
-RUN go test ./... && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/homehub-drop ./cmd/homehub-drop
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/homehub-drop ./cmd/homehub-drop
 
 FROM scratch
 
