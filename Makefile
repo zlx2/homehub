@@ -50,6 +50,11 @@ ai-logs: ## Follow AI Gateway logs
 ai-check: ## Health-check AI Gateway
 	@curl --fail --silent http://127.0.0.1:18130/health/ready >/dev/null
 
+check-no-public-ip: ## Verify no public IP origins or routes in config/docs
+	@echo "Checking for public IP origins..."
+	@grep -rI '111\.229\.205\.99\|139\.\|171\.\|123\.' deploy/compose/ deploy/traefik/ docs/ 2>/dev/null && { echo "FAIL: public IP found"; exit 1; } || true
+	@echo "OK: no public IP in config or docs"
+
 build: ## Compile every application without running tests
 	@docker compose $(COMPOSE_ARGS) build
 	@docker run --rm --network host --user $$(id -u):$$(id -g) \

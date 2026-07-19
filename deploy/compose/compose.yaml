@@ -226,7 +226,7 @@ services:
       HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE: /run/secrets/root_agent_token
       HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE: /run/secrets/auth_encryption_key
       HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE: /run/secrets/owner_setup_token
-      HOMEHUB_IAM_ALLOWED_ORIGINS: ${HOMEHUB_IAM_ALLOWED_ORIGINS:-https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080}
+      HOMEHUB_IAM_ALLOWED_ORIGINS: ${HOMEHUB_IAM_ALLOWED_ORIGINS:-https://zlx2.com,https://www.zlx2.com,http://127.0.0.1:18080}
       HOMEHUB_IAM_SECURE_COOKIES: ${HOMEHUB_IAM_SECURE_COOKIES:-true}
       HOMEHUB_IAM_PASSKEY_RP_ID: ${HOMEHUB_IAM_PASSKEY_RP_ID:-zlx2.com}
       HOMEHUB_IAM_PASSKEY_ORIGINS: ${HOMEHUB_IAM_PASSKEY_ORIGINS:-https://zlx2.com}
