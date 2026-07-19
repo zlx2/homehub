@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""HomeHub service manifest tool — validate, generate, verify."""
+import json
+import os
+import subprocess
+import sys
+
+import yaml
+
+MANIFEST = "services.yaml"
+SCHEMA = "schemas/services.schema.json"
+CATALOG = "apps/control/catalog.json"
+TRAEFIK_GEN = "deploy/traefik/dynamic/generated-services.yaml"
+
+HEADER = "# DO NOT EDIT — generated from services.yaml by homehubctl\n"
+
+
+def load_manifest():
+    with open(MANIFEST) as f:
+        return yaml.safe_load(f)
+
+
+def cmd_validate():
+    m = load_manifest()
+    with open(SCHEMA) as f:
+        schema = json.load(f)
+    try:
+        import jsonschema
+        jsonschema.validate(m, schema)
+    except ImportError:
+        pass  # skip jsonschema if not installed
+    ids, audiences = set(), set()
+    for s in m["services"]:
+        sid, aud = s["id"], s["audience"]
+        if sid in ids:
+            print(f"ERROR: duplicate id {sid}", file=sys.stderr); sys.exit(1)
+        if aud in audiences:
+            print(f"ERROR: duplicate audience {aud}", file=sys.stderr); sys.exit(1)
+        ids.add(sid); audiences.add(aud)
+        if s.get("visibility") == "internal" and s.get("route"):
+            print(f"ERROR: internal service {sid} has route", file=sys.stderr); sys.exit(1)
+    print("services.yaml: valid")
+
+
+def cmd_generate():
+    m = load_manifest()
+    # Catalog
+    catalog = []
+    for s in m["services"]:
+        catalog.append({
+            "id": s["id"], "name": s["name"], "description": s.get("description", ""),
+            "route": s.get("route") or "", "visibility": s.get("visibility", "internal"),
+            "health": s.get("health", ""), "permissions": s.get("permissions", []),
+        })
+    write_json(CATALOG, catalog)
+
+    # Traefik routes
+    routers, services = {}, {}
+    for s in m["services"]:
+        if not s.get("route") or s.get("visibility") == "internal":
+            continue
+        routers[s["id"] + "-api"] = {"rule": f"PathPrefix(`{s['route']}`)", "service": s["id"]}
+        services[s["id"]] = {"loadBalancer": {"servers": [{"url": f"http://{s['id']}:8080"}]}}
+    write_yaml(TRAEFIK_GEN, {"http": {"routers": routers, "services": services}})
+    print(f"Generated: {CATALOG}, {TRAEFIK_GEN}")
+
+
+def cmd_verify():
+    result = subprocess.run(["git", "diff", "--exit-code", CATALOG, TRAEFIK_GEN], capture_output=True)
+    if result.returncode != 0:
+        print("ERROR: generated files out of sync. Run 'make generate'.", file=sys.stderr)
+        sys.exit(1)
+    print("Generated files: up-to-date")
+
+
+def write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(HEADER)
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def write_yaml(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(HEADER)
+        f.write(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2 or sys.argv[1] not in ("validate", "generate", "verify-generated"):
+        print("usage: homehubctl <validate|generate|verify-generated>", file=sys.stderr)
+        sys.exit(1)
+    {"validate": cmd_validate, "generate": cmd_generate, "verify-generated": cmd_verify}[sys.argv[1]]()

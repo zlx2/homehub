@@ -1,0 +1,35 @@
+# Gitee CI pipeline for HomeHub static verification.
+# This workflow runs `make verify` — no production secrets required.
+# If Gitee CI is not enabled, this file serves as documentation.
+#
+# To activate: enable Gitee Go in the repository settings and push this file.
+
+name: homehub-verify
+displayName: HomeHub Verify
+
+triggers:
+  push:
+    branches:
+      include:
+        - main
+  pull_request:
+    branches:
+      include:
+        - main
+
+stages:
+  - name: verify
+    displayName: Static and Unit Verification
+    jobs:
+      - name: verify
+        displayName: make verify
+        steps:
+          - step: agent@1
+            name: run_verify
+            displayName: Run make verify
+            inputs:
+              image: ubuntu:22.04
+              commands:
+                - apt-get update && apt-get install -y make curl git docker.io python3-pip
+                - pip3 install pyyaml
+                - make verify

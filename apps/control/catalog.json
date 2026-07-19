@@ -1,60 +1,73 @@
-{
-  "version": 2,
-  "source": "services.yaml",
-  "services": [
-    {
-	  "id": "ai-gateway",
-	  "name": "AI Gateway",
-	  "description": "内网 AI 模型路由与 SSE 流式代理",
-	  "kind": "infrastructure-service",
-	  "health_url": "http://ai-gateway:8080/health/ready",
-	  "path": "/internal/ai-gateway",
-	  "visibility": "owner"
-	},
-	{
-      "id": "drop",
-      "name": "Drop",
-      "description": "原图与文本临时中转服务",
-      "kind": "business-service",
-      "health_url": "http://drop:8080/health/ready",
-      "path": "/drop",
-      "visibility": "shared"
-    },
-    {
-      "id": "iam",
-      "name": "身份与权限",
-      "description": "用户、会话、令牌与授权中心",
-      "kind": "control-plane",
-      "health_url": "http://iam:8080/health/ready",
-      "path": "/api/iam",
-      "visibility": "owner"
-    },
-    {
-      "id": "control",
-      "name": "系统看板",
-      "description": "服务状态聚合",
-      "kind": "control-plane",
-      "health_url": "http://control:8080/health/ready",
-      "path": "/api/control",
-      "visibility": "owner"
-    },
-    {
-      "id": "portal",
-      "name": "HomeHub Portal",
-      "description": "登录页与聚合首页",
-      "kind": "portal",
-      "health_url": "http://portal:8080/health",
-      "path": "/",
-      "visibility": "owner"
-    },
-    {
-      "id": "telegram-bridge",
-      "name": "Telegram Bridge",
-      "description": "Telegram 消息转发到 Drop",
-      "kind": "bridge",
-      "health_url": "http://host.docker.internal:8730/health/ready",
-      "path": "/internal/telegram-bridge",
-      "visibility": "owner"
-    }
-  ]
-}
+# DO NOT EDIT — generated from services.yaml by homehubctl
+[
+  {
+    "id": "iam",
+    "name": "身份与权限",
+    "description": "用户、会话、Passkey、机器身份、令牌签发、授权编排",
+    "route": "/api/iam",
+    "visibility": "owner",
+    "health": "http://iam:8080/health/ready",
+    "permissions": [
+      "iam.principal.read",
+      "iam.principal.manage",
+      "iam.grant.manage",
+      "iam.audit.read"
+    ]
+  },
+  {
+    "id": "control",
+    "name": "系统看板",
+    "description": "服务状态聚合",
+    "route": "/api/control",
+    "visibility": "owner",
+    "health": "http://control:8080/health/ready",
+    "permissions": []
+  },
+  {
+    "id": "portal",
+    "name": "HomeHub Portal",
+    "description": "登录页与聚合首页",
+    "route": "/",
+    "visibility": "owner",
+    "health": "http://portal:8080/health",
+    "permissions": []
+  },
+  {
+    "id": "drop",
+    "name": "Drop",
+    "description": "原图与文本临时中转服务",
+    "route": "/drop",
+    "visibility": "shared",
+    "health": "http://drop:8080/health/ready",
+    "permissions": [
+      "drop.item.create",
+      "drop.item.read",
+      "drop.item.list",
+      "drop.item.delete"
+    ]
+  },
+  {
+    "id": "telegram-bridge",
+    "name": "Telegram Bridge",
+    "description": "Telegram 消息转发到 Drop",
+    "route": "",
+    "visibility": "internal",
+    "health": "http://host.docker.internal:8730/health/ready",
+    "permissions": [
+      "drop.item.create"
+    ]
+  },
+  {
+    "id": "ai-gateway",
+    "name": "AI Gateway",
+    "description": "内网 AI 模型路由与 SSE 流式代理",
+    "route": "",
+    "visibility": "internal",
+    "health": "http://ai-gateway:8080/health/ready",
+    "permissions": [
+      "ai.model.fast",
+      "ai.model.reasoning",
+      "ai.model.coding"
+    ]
+  }
+]

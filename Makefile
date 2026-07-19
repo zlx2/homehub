@@ -58,6 +58,27 @@ check-no-public-ip: ## Verify no public IP origins or routes in config/docs
 test-bootstrap: ## Cold-start PostgreSQL with a fresh volume and verify init scripts
 	@./deploy/scripts/test-bootstrap.sh
 
+manifest-validate: ## Validate services.yaml against schema
+	@./tools/homehubctl validate
+
+generate: ## Generate derived files from services.yaml
+	@./tools/homehubctl generate
+
+verify-generated: ## Check generated files are up-to-date
+	@./tools/homehubctl verify-generated
+
+verify: ## Run all static and unit verification (no production secrets)
+	@echo "=== config ===" && $(MAKE) config
+	@echo "=== manifest-validate ===" && $(MAKE) manifest-validate
+	@echo "=== verify-generated ===" && $(MAKE) verify-generated
+	@echo "=== check-no-public-ip ===" && $(MAKE) check-no-public-ip
+	@echo "=== test-iam ===" && $(MAKE) test-iam
+	@echo "=== test-sdk-go ===" && $(MAKE) test-sdk-go
+	@echo "=== test-drop ===" && $(MAKE) test-drop
+	@echo "=== test-telegram-bridge ===" && $(MAKE) test-telegram-bridge
+	@echo "=== test-portal ===" && $(MAKE) test-portal
+	@echo "=== verify: PASS ==="
+
 build: ## Compile every application without running tests
 	@docker compose $(COMPOSE_ARGS) build
 	@docker run --rm --network host --user $$(id -u):$$(id -g) \

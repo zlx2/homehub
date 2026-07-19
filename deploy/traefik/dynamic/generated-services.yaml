@@ -1,0 +1,32 @@
+# DO NOT EDIT — generated from services.yaml by homehubctl
+http:
+  routers:
+    control-api:
+      rule: PathPrefix(`/api/control`)
+      service: control
+    drop-api:
+      rule: PathPrefix(`/drop`)
+      service: drop
+    iam-api:
+      rule: PathPrefix(`/api/iam`)
+      service: iam
+    portal-api:
+      rule: PathPrefix(`/`)
+      service: portal
+  services:
+    control:
+      loadBalancer:
+        servers:
+        - url: http://control:8080
+    drop:
+      loadBalancer:
+        servers:
+        - url: http://drop:8080
+    iam:
+      loadBalancer:
+        servers:
+        - url: http://iam:8080
+    portal:
+      loadBalancer:
+        servers:
+        - url: http://portal:8080
