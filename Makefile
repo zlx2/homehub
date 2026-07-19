@@ -55,6 +55,9 @@ check-no-public-ip: ## Verify no public IP origins or routes in config/docs
 	@grep -rI '111\.229\.205\.99\|139\.\|171\.\|123\.' deploy/compose/ deploy/traefik/ docs/ 2>/dev/null && { echo "FAIL: public IP found"; exit 1; } || true
 	@echo "OK: no public IP in config or docs"
 
+test-bootstrap: ## Cold-start PostgreSQL with a fresh volume and verify init scripts
+	@./deploy/scripts/test-bootstrap.sh
+
 build: ## Compile every application without running tests
 	@docker compose $(COMPOSE_ARGS) build
 	@docker run --rm --network host --user $$(id -u):$$(id -g) \

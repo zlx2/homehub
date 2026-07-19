@@ -28,7 +28,7 @@ SECRETS_DIR = RUNTIME_DIR / "secrets"
 
 # Directory → default uid/gid for files written into that directory
 CONSUMER_OWNERSHIP: dict[str, tuple[int, int]] = {
-    "postgres":         (65532, 65532),   # postgres process: 70, init scripts: root — both can read
+    "postgres":         (70, 70),          # postgres user inside container
     "iam":              (65532, 65532),
     "openfga":          (65532, 65532),
     "drop":             (10001, 10001),
