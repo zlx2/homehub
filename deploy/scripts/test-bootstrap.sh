@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # HomeHub PostgreSQL cold-bootstrap test.
 # Creates a fresh temporary volume, starts a one-off postgres with init scripts,
-# verifies all three business databases are correctly created and isolated.
+# verifies both business databases are correctly created and isolated.
 # The production stack is never touched.
 # Does NOT print any secret content.
 
@@ -11,7 +11,6 @@ BOOTSTRAP_VOLUME="homehub-bootstrap-pg-test"
 BOOTSTRAP_CONTAINER="homehub-bootstrap-pg"
 BOOTSTRAP_NET="homehub-bootstrap-test-net"
 RUNTIME_DIR="${HOMEHUB_RUNTIME_DIR:-/srv/homehub/runtime}"
-S=""
 
 cleanup() {
     echo "--- Cleaning up ---"
@@ -27,8 +26,7 @@ echo "=== HomeHub PostgreSQL cold-bootstrap test ==="
 for f in \
     "$RUNTIME_DIR/secrets/postgres/superuser_password" \
     "$RUNTIME_DIR/secrets/postgres/drop_db_password" \
-    "$RUNTIME_DIR/secrets/postgres/iam_db_password" \
-    "$RUNTIME_DIR/secrets/postgres/openfga_db_password"; do
+    "$RUNTIME_DIR/secrets/postgres/iam_db_password"; do
     if ! sudo test -s "$f"; then
         echo "FAIL: required secret missing or empty: $f"
         exit 1
@@ -49,12 +47,10 @@ docker run -d --name "$BOOTSTRAP_CONTAINER" \
     -v "$RUNTIME_DIR/secrets/postgres/superuser_password:/run/secrets/postgres_superuser_password:ro" \
     -v "$RUNTIME_DIR/secrets/postgres/drop_db_password:/run/secrets/postgres_drop_db_password:ro" \
     -v "$RUNTIME_DIR/secrets/postgres/iam_db_password:/run/secrets/postgres_iam_db_password:ro" \
-    -v "$RUNTIME_DIR/secrets/postgres/openfga_db_password:/run/secrets/postgres_openfga_db_password:ro" \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_superuser_password \
     -e HOMEHUB_DROP_DB_PASSWORD_FILE=/run/secrets/postgres_drop_db_password \
     -e HOMEHUB_IAM_DB_PASSWORD_FILE=/run/secrets/postgres_iam_db_password \
-    -e OPENFGA_DB_PASSWORD_FILE=/run/secrets/postgres_openfga_db_password \
     postgres:18.4-alpine \
     -c shared_buffers=32MB -c max_connections=10
 
@@ -93,15 +89,13 @@ verify_exists() {
 }
 
 verify_exists "SELECT 1 FROM pg_database WHERE datname='homehub_iam'" "IAM database"
-verify_exists "SELECT 1 FROM pg_database WHERE datname='homehub_openfga'" "OpenFGA database"
 verify_exists "SELECT 1 FROM pg_database WHERE datname='homehub_drop'" "Drop database"
 verify_exists "SELECT 1 FROM pg_roles WHERE rolname='homehub_iam'" "IAM role"
-verify_exists "SELECT 1 FROM pg_roles WHERE rolname='homehub_openfga'" "OpenFGA role"
 verify_exists "SELECT 1 FROM pg_roles WHERE rolname='homehub_drop'" "Drop role"
 
-# Verify each role has LOGIN privilege and can authenticate
+# Verify each role has LOGIN privilege
 echo "=== Login verification ==="
-for role in homehub_iam homehub_openfga homehub_drop; do
+for role in homehub_iam homehub_drop; do
     result=$(docker exec "$BOOTSTRAP_CONTAINER" psql -U postgres -d postgres -tAc \
         "SELECT rolcanlogin FROM pg_roles WHERE rolname='$role'" 2>/dev/null)
     if [ "$result" = "t" ]; then
