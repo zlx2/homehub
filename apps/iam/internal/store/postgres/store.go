@@ -13,7 +13,7 @@ import (
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	Pool *pgxpool.Pool
 }
 
 type Owner struct {
@@ -85,7 +85,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open IAM database: %w", err)
 	}
-	store := &Store{pool: pool}
+	store := &Store{Pool: pool}
 	if err := store.Ping(ctx); err != nil {
 		store.Close()
 		return nil, err
@@ -95,25 +95,25 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 
 // Migrate runs database migrations
 func (store *Store) Migrate(ctx context.Context) error {
-	return migrateEmbedded(ctx, store.pool)
+	return migrateEmbedded(ctx, store.Pool)
 }
 
-func (store *Store) Close()     { store.pool.Close() }
+func (store *Store) Close()     { store.Pool.Close() }
 func (store *Store) Ping(ctx context.Context) error {
-	return store.pool.Ping(ctx)
+	return store.Pool.Ping(ctx)
 }
 
 // ── Owner ──
 
 func (store *Store) OwnerExists(ctx context.Context) (bool, error) {
 	var exists bool
-	err := store.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM owner WHERE status='active')`).Scan(&exists)
+	err := store.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM owner WHERE status='active')`).Scan(&exists)
 	return exists, err
 }
 
 func (store *Store) GetOwnerByUsername(ctx context.Context, usernameNormalized string) (Owner, error) {
 	var o Owner
-	err := store.pool.QueryRow(ctx, `SELECT id::text,username,display_name,password_hash,totp_cipher,totp_nonce,status
+	err := store.Pool.QueryRow(ctx, `SELECT id::text,username,display_name,password_hash,totp_cipher,totp_nonce,status
 		FROM owner WHERE username_normalized=$1 AND status='active'`, usernameNormalized).
 		Scan(&o.ID, &o.Username, &o.DisplayName, &o.PasswordHash, &o.TOTPCipher, &o.TOTPNonce, &o.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -126,7 +126,7 @@ func (store *Store) GetOwnerByUsername(ctx context.Context, usernameNormalized s
 
 func (store *Store) ValidateBootstrapToken(ctx context.Context, tokenHash []byte) (bool, error) {
 	var valid bool
-	err := store.pool.QueryRow(ctx, `SELECT EXISTS(
+	err := store.Pool.QueryRow(ctx, `SELECT EXISTS(
 		SELECT 1 FROM owner_bootstrap_tokens WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now()
 	) AND NOT EXISTS(SELECT 1 FROM owner WHERE status='active')`, tokenHash).Scan(&valid)
 	return valid, err
@@ -134,7 +134,7 @@ func (store *Store) ValidateBootstrapToken(ctx context.Context, tokenHash []byte
 
 func (store *Store) InsertPendingSetup(ctx context.Context, tokenHash []byte, username, normalized, displayName, passwordHash string, totpCipher, totpNonce []byte, expiresAt time.Time) (string, error) {
 	var setupID string
-	err := store.pool.QueryRow(ctx, `INSERT INTO pending_owner_setups(
+	err := store.Pool.QueryRow(ctx, `INSERT INTO pending_owner_setups(
 		bootstrap_token_hash,username,username_normalized,display_name,password_hash,totp_cipher,totp_nonce,expires_at
 	) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id::text`,
 		tokenHash, username, normalized, displayName, passwordHash, totpCipher, totpNonce, expiresAt).Scan(&setupID)
@@ -178,7 +178,7 @@ func (store *Store) CreateSession(ctx context.Context, transaction pgx.Tx, owner
 }
 
 func (store *Store) AuthenticateSession(ctx context.Context, tokenHash []byte) (ownerID, ownerUsername, ownerDisplayName, sessionID string, err error) {
-	err = store.pool.QueryRow(ctx, `UPDATE sessions s SET last_seen_at=now(),idle_expires_at=LEAST(now()+interval '30 days',absolute_expires_at)
+	err = store.Pool.QueryRow(ctx, `UPDATE sessions s SET last_seen_at=now(),idle_expires_at=LEAST(now()+interval '30 days',absolute_expires_at)
 		FROM owner o
 		WHERE s.token_hash=$1 AND s.owner_id=o.id AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()
 		AND o.status='active'
@@ -189,19 +189,19 @@ func (store *Store) AuthenticateSession(ctx context.Context, tokenHash []byte) (
 
 func (store *Store) ValidateCSRF(ctx context.Context, sessionHash, csrfHash []byte) (bool, error) {
 	var valid bool
-	err := store.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN owner o ON o.id=s.owner_id
+	err := store.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN owner o ON o.id=s.owner_id
 		WHERE s.token_hash=$1 AND s.csrf_hash=$2 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()
 		AND o.status='active')`, sessionHash, csrfHash).Scan(&valid)
 	return valid, err
 }
 
 func (store *Store) RevokeSession(ctx context.Context, tokenHash []byte) error {
-	_, err := store.pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash)
+	_, err := store.Pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, tokenHash)
 	return err
 }
 
 func (store *Store) RevokeSessionByID(ctx context.Context, ownerID, sessionID string) (bool, error) {
-	result, err := store.pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, sessionID, ownerID)
+	result, err := store.Pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, sessionID, ownerID)
 	if err != nil {
 		return false, err
 	}
@@ -209,7 +209,7 @@ func (store *Store) RevokeSessionByID(ctx context.Context, ownerID, sessionID st
 }
 
 func (store *Store) RevokeOtherSessions(ctx context.Context, ownerID, currentSessionID string) (int64, error) {
-	result, err := store.pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE owner_id=$1::uuid AND id!=$2::uuid AND revoked_at IS NULL`, ownerID, currentSessionID)
+	result, err := store.Pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE owner_id=$1::uuid AND id!=$2::uuid AND revoked_at IS NULL`, ownerID, currentSessionID)
 	if err != nil {
 		return 0, err
 	}
@@ -227,7 +227,7 @@ type SessionInfo struct {
 }
 
 func (store *Store) ListSessions(ctx context.Context, ownerID string) ([]SessionInfo, error) {
-	rows, err := store.pool.Query(ctx, `SELECT id::text,created_at,last_seen_at,COALESCE(host(remote_ip),''),authentication_methods,revoked_at
+	rows, err := store.Pool.Query(ctx, `SELECT id::text,created_at,last_seen_at,COALESCE(host(remote_ip),''),authentication_methods,revoked_at
 		FROM sessions WHERE owner_id=$1::uuid ORDER BY created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
@@ -252,7 +252,7 @@ func HashCredential(value string) [sha256.Size]byte {
 
 func (store *Store) CreateAPIKey(ctx context.Context, ownerID, name, kind string, tokenHash []byte, scopes []string, expiresAt *time.Time) (string, error) {
 	var id string
-	err := store.pool.QueryRow(ctx, `INSERT INTO api_keys(owner_id,name,kind,token_hash,scopes,expires_at)
+	err := store.Pool.QueryRow(ctx, `INSERT INTO api_keys(owner_id,name,kind,token_hash,scopes,expires_at)
 		VALUES($1::uuid,$2,$3,$4,$5,$6) RETURNING id::text`,
 		ownerID, name, kind, tokenHash, scopes, expiresAt).Scan(&id)
 	if err != nil {
@@ -262,7 +262,7 @@ func (store *Store) CreateAPIKey(ctx context.Context, ownerID, name, kind string
 }
 
 func (store *Store) RevokeAPIKey(ctx context.Context, ownerID, keyID string) (bool, error) {
-	result, err := store.pool.Exec(ctx, `UPDATE api_keys SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, keyID, ownerID)
+	result, err := store.Pool.Exec(ctx, `UPDATE api_keys SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, keyID, ownerID)
 	if err != nil {
 		return false, err
 	}
@@ -282,7 +282,7 @@ type APIKeyInfo struct {
 }
 
 func (store *Store) ListAPIKeys(ctx context.Context, ownerID string) ([]APIKeyInfo, error) {
-	rows, err := store.pool.Query(ctx, `SELECT id::text,name,kind,scopes,created_at,last_used_at,COALESCE(host(last_used_ip),''),expires_at,revoked_at
+	rows, err := store.Pool.Query(ctx, `SELECT id::text,name,kind,scopes,created_at,last_used_at,COALESCE(host(last_used_ip),''),expires_at,revoked_at
 		FROM api_keys WHERE owner_id=$1::uuid ORDER BY created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,7 @@ func (store *Store) ListAPIKeys(ctx context.Context, ownerID string) ([]APIKeyIn
 
 func (store *Store) AuthenticateAPIKey(ctx context.Context, tokenHash []byte) (*APIKey, error) {
 	var key APIKey
-	err := store.pool.QueryRow(ctx, `UPDATE api_keys SET last_used_at=now()
+	err := store.Pool.QueryRow(ctx, `UPDATE api_keys SET last_used_at=now()
 		FROM owner o WHERE api_keys.token_hash=$1 AND api_keys.owner_id=o.id AND api_keys.revoked_at IS NULL
 		AND (api_keys.expires_at IS NULL OR api_keys.expires_at>now()) AND o.status='active'
 		RETURNING api_keys.id::text,api_keys.owner_id::text,api_keys.name,api_keys.kind,api_keys.scopes,api_keys.expires_at,api_keys.created_at`, tokenHash).
@@ -316,14 +316,14 @@ func (store *Store) AuthenticateAPIKey(ctx context.Context, tokenHash []byte) (*
 
 func (store *Store) CreateShare(ctx context.Context, ownerID string, tokenHash []byte, shareType, serviceID, resourceType, resourceID string, actions []string, expiresAt time.Time, maxUses *int) (string, error) {
 	var id string
-	err := store.pool.QueryRow(ctx, `INSERT INTO shares(owner_id,token_hash,share_type,service_id,resource_type,resource_id,actions,expires_at,max_uses)
+	err := store.Pool.QueryRow(ctx, `INSERT INTO shares(owner_id,token_hash,share_type,service_id,resource_type,resource_id,actions,expires_at,max_uses)
 		VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id::text`,
 		ownerID, tokenHash, shareType, serviceID, resourceType, resourceID, actions, expiresAt, maxUses).Scan(&id)
 	return id, err
 }
 
 func (store *Store) RevokeShare(ctx context.Context, ownerID, shareID string) (bool, error) {
-	result, err := store.pool.Exec(ctx, `UPDATE shares SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, shareID, ownerID)
+	result, err := store.Pool.Exec(ctx, `UPDATE shares SET revoked_at=now() WHERE id=$1::uuid AND owner_id=$2::uuid AND revoked_at IS NULL`, shareID, ownerID)
 	if err != nil {
 		return false, err
 	}
@@ -345,7 +345,7 @@ type ShareInfo struct {
 }
 
 func (store *Store) ListShares(ctx context.Context, ownerID string) ([]ShareInfo, error) {
-	rows, err := store.pool.Query(ctx, `SELECT id::text,share_type,service_id,COALESCE(resource_type,''),COALESCE(resource_id,''),actions,expires_at,max_uses,use_count,revoked_at,created_at
+	rows, err := store.Pool.Query(ctx, `SELECT id::text,share_type,service_id,COALESCE(resource_type,''),COALESCE(resource_id,''),actions,expires_at,max_uses,use_count,revoked_at,created_at
 		FROM shares WHERE owner_id=$1::uuid ORDER BY created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
@@ -364,7 +364,7 @@ func (store *Store) ListShares(ctx context.Context, ownerID string) ([]ShareInfo
 
 func (store *Store) RedeemShare(ctx context.Context, tokenHash []byte) (*Share, error) {
 	var s Share
-	err := store.pool.QueryRow(ctx, `SELECT id::text,owner_id::text,token_hash,share_type,service_id,COALESCE(resource_type,''),COALESCE(resource_id,''),actions,expires_at,max_uses,use_count,revoked_at,created_at
+	err := store.Pool.QueryRow(ctx, `SELECT id::text,owner_id::text,token_hash,share_type,service_id,COALESCE(resource_type,''),COALESCE(resource_id,''),actions,expires_at,max_uses,use_count,revoked_at,created_at
 		FROM shares WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now()
 		AND (max_uses IS NULL OR use_count < max_uses)`, tokenHash).
 		Scan(&s.ID, &s.OwnerID, &s.TokenHash, &s.ShareType, &s.ServiceID, &s.ResourceType, &s.ResourceID, &s.Actions, &s.ExpiresAt, &s.MaxUses, &s.UseCount, &s.RevokedAt, &s.CreatedAt)
@@ -375,18 +375,18 @@ func (store *Store) RedeemShare(ctx context.Context, tokenHash []byte) (*Share, 
 }
 
 func (store *Store) IncrementShareUse(ctx context.Context, shareID string) error {
-	_, err := store.pool.Exec(ctx, `UPDATE shares SET use_count=use_count+1 WHERE id=$1::uuid`, shareID)
+	_, err := store.Pool.Exec(ctx, `UPDATE shares SET use_count=use_count+1 WHERE id=$1::uuid`, shareID)
 	return err
 }
 
 // ── Passkeys ──
 
 func (store *Store) PasskeyQueryRow(ctx context.Context, query string, args ...any) pgx.Row {
-	return store.pool.QueryRow(ctx, query, args...)
+	return store.Pool.QueryRow(ctx, query, args...)
 }
 
 func (store *Store) PasskeyExec(ctx context.Context, query string, args ...any) (int64, error) {
-	result, err := store.pool.Exec(ctx, query, args...)
+	result, err := store.Pool.Exec(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -394,13 +394,13 @@ func (store *Store) PasskeyExec(ctx context.Context, query string, args ...any) 
 }
 
 func (store *Store) PasskeyQuery(ctx context.Context, query string, args ...any) (pgx.Rows, error) {
-	return store.pool.Query(ctx, query, args...)
+	return store.Pool.Query(ctx, query, args...)
 }
 
 // ── Audit ──
 
 func (store *Store) RecordAudit(ctx context.Context, eventType, outcome, remoteIP string, details map[string]any) {
 	encoded, _ := json.Marshal(details)
-	_, _ = store.pool.Exec(ctx, `INSERT INTO audit_events(event_type,outcome,remote_ip,details)
+	_, _ = store.Pool.Exec(ctx, `INSERT INTO audit_events(event_type,outcome,remote_ip,details)
 		VALUES($1,$2,$3::inet,$4)`, eventType, outcome, remoteIP, encoded)
 }

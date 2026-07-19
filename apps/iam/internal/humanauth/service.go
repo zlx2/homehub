@@ -132,7 +132,7 @@ func Open(ctx context.Context, options Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &storepostgres.Store{}
+	store := &storepostgres.Store{Pool: pool}
 	service := &Service{
 		pool: pool, store: store, aead: aead, signer: options.Signer,
 		hashSlots: make(chan struct{}, 2), now: time.Now,
@@ -163,7 +163,8 @@ func Open(ctx context.Context, options Options) (*Service, error) {
 func (service *Service) Close() { service.pool.Close() }
 
 func (service *Service) SetupRequired(ctx context.Context) (bool, error) {
-	return service.store.OwnerExists(ctx)
+	exists, err := service.store.OwnerExists(ctx)
+	return !exists, err
 }
 
 func (service *Service) BeginSetup(ctx context.Context, bootstrapToken, username, displayName, password string) (Setup, error) {

@@ -95,10 +95,10 @@ export const iam = {
   confirmSetup: (body: object) => request<SessionState>('/api/iam/v1/setup/confirm', { method: 'POST', body: JSON.stringify(body) }),
   login: (body: object) => request<SessionState>('/api/iam/v1/login', { method: 'POST', body: JSON.stringify(body) }),
   beginPasskeyLogin: () => request<any>('/api/iam/v1/passkeys/login/begin', { method: 'POST' }),
-  finishPasskeyLogin: (credential: object) => request<SessionState>('/api/iam/v1/passkeys/login/finish', { method: 'POST', body: JSON.stringify(credential) }),
+  finishPasskeyLogin: (credential: object, ceremonyToken: string) => request<SessionState>('/api/iam/v1/passkeys/login/finish', { method: 'POST', body: JSON.stringify(credential), headers: { 'X-HomeHub-Ceremony-Token': ceremonyToken } }),
   beginPasskeyRegistration: () => request<any>('/api/iam/v1/passkeys/registration/begin', { method: 'POST' }),
-  finishPasskeyRegistration: (credential: object, name: string) => request<{ registered: boolean }>('/api/iam/v1/passkeys/registration/finish', {
-    method: 'POST', body: JSON.stringify(credential), headers: { 'X-HomeHub-Passkey-Name': name },
+  finishPasskeyRegistration: (credential: object, name: string, ceremonyToken: string) => request<{ registered: boolean }>('/api/iam/v1/passkeys/registration/finish', {
+    method: 'POST', body: JSON.stringify(credential), headers: { 'X-HomeHub-Passkey-Name': name, 'X-HomeHub-Ceremony-Token': ceremonyToken },
   }),
   passkeys: () => request<{ passkeys: PasskeyCredential[] }>('/api/iam/v1/passkeys'),
   deletePasskey: (id: string) => request<void>(`/api/iam/v1/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),

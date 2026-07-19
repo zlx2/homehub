@@ -39,7 +39,7 @@ function Auth({ state, reload }: { state: SessionState; reload: () => Promise<vo
     try {
       const options = await iam.beginPasskeyLogin();
       const credential = await startAuthentication({ optionsJSON: options.publicKey ?? options });
-      await iam.finishPasskeyLogin(credential); await reload();
+      await iam.finishPasskeyLogin(credential, options.ceremony_token); await reload();
     } catch (cause) { setError(message(cause)); } finally { setBusy(false); }
   }
 
@@ -214,7 +214,7 @@ function PasskeysTab() {
     try {
       const options = await iam.beginPasskeyRegistration();
       const credential = await startRegistration({ optionsJSON: options.publicKey ?? options });
-      await iam.finishPasskeyRegistration(credential, 'Bitwarden Passkey');
+      await iam.finishPasskeyRegistration(credential, 'Bitwarden Passkey', options.ceremony_token);
       await load();
     } catch (cause) { setError(message(cause)); } finally { setBusy(false); }
   }
