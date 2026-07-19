@@ -35,14 +35,14 @@ logs: ## Follow all service logs
 
 ai-up: ## Start AI Gateway (optional profile)
 	@echo "Checking AI provider keys..."
-	@test -s /srv/homehub/runtime/ai_deepseek_api_key || { echo "ERROR: ai_deepseek_api_key missing or empty"; exit 1; }
-	@test -s /srv/homehub/runtime/ai_opencode_go_api_key || { echo "ERROR: ai_opencode_go_api_key missing or empty"; exit 1; }
-	@stat -c '%a %u:%g' /srv/homehub/runtime/ai_deepseek_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: ai_deepseek_api_key wrong permissions"; exit 1; }
-	@stat -c '%a %u:%g' /srv/homehub/runtime/ai_opencode_go_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: ai_opencode_go_api_key wrong permissions"; exit 1; }
+	@sudo test -s /srv/homehub/runtime/secrets/ai-gateway/deepseek_api_key || { echo "ERROR: deepseek_api_key missing or empty"; exit 1; }
+	@sudo test -s /srv/homehub/runtime/secrets/ai-gateway/opencode_go_api_key || { echo "ERROR: opencode_go_api_key missing or empty"; exit 1; }
+	@sudo stat -c '%a %u:%g' /srv/homehub/runtime/secrets/ai-gateway/deepseek_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: deepseek_api_key wrong permissions"; exit 1; }
+	@sudo stat -c '%a %u:%g' /srv/homehub/runtime/secrets/ai-gateway/opencode_go_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: opencode_go_api_key wrong permissions"; exit 1; }
 	@docker compose $(COMPOSE_ARGS) --profile ai up -d --build --wait --wait-timeout 30 ai-gateway
 
 ai-down: ## Stop AI Gateway
-	@docker compose $(COMPOSE_ARGS) --profile ai down ai-gateway
+	@docker compose $(COMPOSE_ARGS) --profile ai stop ai-gateway && docker compose $(COMPOSE_ARGS) --profile ai rm -f ai-gateway
 
 ai-logs: ## Follow AI Gateway logs
 	@docker compose $(COMPOSE_ARGS) --profile ai logs -f ai-gateway
