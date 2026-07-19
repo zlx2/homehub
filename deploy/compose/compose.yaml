@@ -69,7 +69,7 @@ services:
     networks:
       - edge
     volumes:
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/cloudflare_tunnel_token:/run/secrets/cloudflare_tunnel_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/cloudflared/tunnel_token:/run/secrets/cloudflare_tunnel_token:ro
     read_only: true
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
@@ -122,9 +122,9 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_superuser_password
-      HOMEHUB_IAM_DB_PASSWORD_FILE: /run/secrets/iam_db_password
-      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
-      HOMEHUB_DROP_DB_PASSWORD_FILE: /run/secrets/drop_db_password
+      HOMEHUB_DROP_DB_PASSWORD_FILE: /run/secrets/postgres_drop_db_password
+      HOMEHUB_IAM_DB_PASSWORD_FILE: /run/secrets/postgres_iam_db_password
+      OPENFGA_DB_PASSWORD_FILE: /run/secrets/postgres_openfga_db_password
       TZ: ${TZ:-Asia/Hong_Kong}
     command:
       - postgres
@@ -139,10 +139,10 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/postgres_superuser_password:/run/secrets/postgres_superuser_password:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/postgres/superuser_password:/run/secrets/postgres_superuser_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/postgres/drop_db_password:/run/secrets/postgres_drop_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/postgres/iam_db_password:/run/secrets/postgres_iam_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/postgres/openfga_db_password:/run/secrets/postgres_openfga_db_password:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -163,12 +163,12 @@ services:
     command: ["migrate"]
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
+      OPENFGA_DATABASE_PASSWORD_FILE: /run/secrets/openfga_db_password
       TZ: ${TZ:-Asia/Hong_Kong}
     networks:
       - data
     volumes:
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/openfga/database_password:/run/secrets/openfga_db_password:ro
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -185,7 +185,7 @@ services:
     command: ["run"]
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DB_PASSWORD_FILE: /run/secrets/openfga_db_password
+      OPENFGA_DATABASE_PASSWORD_FILE: /run/secrets/openfga_db_password
       OPENFGA_LOG_FORMAT: json
       OPENFGA_HTTP_ADDR: 0.0.0.0:8080
       OPENFGA_GRPC_ADDR: 0.0.0.0:8081
@@ -199,7 +199,7 @@ services:
     ports:
       - "127.0.0.1:18101:8080"
     volumes:
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/openfga/database_password:/run/secrets/openfga_db_password:ro
     security_opt:
       - no-new-privileges:true
 
@@ -219,7 +219,7 @@ services:
         condition: service_started
     environment:
       HOMEHUB_IAM_LISTEN_ADDRESS: :8080
-      HOMEHUB_IAM_DATABASE_PASSWORD_FILE: /run/secrets/iam_db_password
+      HOMEHUB_IAM_DATABASE_PASSWORD_FILE: /run/secrets/iam_database_password
       HOMEHUB_IAM_OPENFGA_URL: http://openfga:8080
       HOMEHUB_IAM_SIGNING_KEY_FILE: /run/secrets/iam_signing_key
       HOMEHUB_IAM_SIGNING_KEY_ID: homehub-dev-1
@@ -238,11 +238,11 @@ services:
       - "127.0.0.1:18100:8080"
     read_only: true
     volumes:
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_signing_key:/run/secrets/iam_signing_key:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/auth_encryption_key:/run/secrets/auth_encryption_key:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/owner_setup_token:/run/secrets/owner_setup_token:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/iam/signing_key:/run/secrets/iam_signing_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/iam/root_agent_token:/run/secrets/root_agent_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/iam/auth_encryption_key:/run/secrets/auth_encryption_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/iam/owner_setup_token:/run/secrets/owner_setup_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/iam/database_password:/run/secrets/iam_database_password:ro
     tmpfs:
       - /tmp
     healthcheck:
@@ -319,8 +319,8 @@ services:
     read_only: true
     volumes:
       - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/ai_deepseek_api_key:/run/secrets/ai_deepseek_api_key:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/ai_opencode_go_api_key:/run/secrets/ai_opencode_go_api_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/ai-gateway/deepseek_api_key:/run/secrets/ai_deepseek_api_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/ai-gateway/opencode_go_api_key:/run/secrets/ai_opencode_go_api_key:ro
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
     healthcheck:
@@ -352,7 +352,7 @@ services:
       HOMEHUB_DROP_DATABASE_PORT: "5432"
       HOMEHUB_DROP_DATABASE_NAME: homehub_drop
       HOMEHUB_DROP_DATABASE_USER: homehub_drop
-      HOMEHUB_DROP_DATABASE_PASSWORD_FILE: /run/secrets/drop_db_password
+      HOMEHUB_DROP_DATABASE_PASSWORD_FILE: /run/secrets/drop_database_password
       HOMEHUB_DROP_DATA_DIRECTORY: /data
       HOMEHUB_DROP_IAM_JWKS_URL: http://iam:8080/.well-known/jwks.json
     networks:
@@ -364,7 +364,7 @@ services:
     read_only: true
     volumes:
       - ${HOMEHUB_DATA_ROOT:-/srv/homehub/data}/drop:/data
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/drop/database_password:/run/secrets/drop_database_password:ro
     tmpfs:
       - /tmp
     healthcheck:
@@ -409,8 +409,8 @@ services:
       no_proxy: localhost,127.0.0.1
     read_only: true
     volumes:
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/telegram_bot_token:/run/secrets/telegram_bot_token:ro
-      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/telegram_bridge_credential:/run/secrets/iam_machine_credential:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/telegram-bridge/bot_token:/run/secrets/telegram_bot_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/secrets/telegram-bridge/iam_credential:/run/secrets/iam_machine_credential:ro
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
     healthcheck:
