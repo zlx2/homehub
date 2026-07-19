@@ -20,7 +20,7 @@ forwards allowed messages to Drop. It is an internal worker with no public route
 Source of truth:
 
 ```text
-/home/ubuntu/homehub-v2/services/telegram-bridge/
+/home/ubuntu/homehub/services/telegram-bridge/
 ```
 
 ## Setup

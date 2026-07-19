@@ -2,7 +2,7 @@
 
 Hermes Agent 是仓库外的独立宿主机系统，HomeHub Compose 不启动、停止或修改它，也不将其网页终端纳入平台。
 
-未来接入只使用 V2 IAM：
+未来接入只使用 IAM：
 
 ```text
 agent:hermes 机器凭据

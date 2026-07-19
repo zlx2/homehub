@@ -15,7 +15,7 @@ token, schema, and API formats are outside its compatibility contract.
 
 ## Decision
 
-HomeHub V2 uses the following control-plane boundaries:
+HomeHub uses the following control-plane boundaries:
 
 - **HomeHub IAM** owns principals, credentials, sessions, delegations, signing
   keys, token exchange, and authorization orchestration.

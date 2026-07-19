@@ -59,7 +59,7 @@ cd /home/ubuntu/homehub/services/telegram-bridge
 go test ./...
 
 cd /home/ubuntu/homehub
-make v2-up
+make up
 make test-telegram-bridge-integration
 ```
 

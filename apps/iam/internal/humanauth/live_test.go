@@ -33,7 +33,7 @@ func TestLiveOwnerAndShareLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signer, err := token.NewSignerFromFile("v2-live-test", "/run/secrets/iam_signing_key", 2*time.Minute)
+	signer, err := token.NewSignerFromFile("live-test", "/run/secrets/iam_signing_key", 2*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,13 +9,13 @@
 - Memory: 3.6 GiB total, approximately 2.5 GiB available at capture time
 - Swap: 4.0 GiB total, approximately 1.2 GiB used
 - Root filesystem: 40 GiB total, 33 GiB used, 5.3 GiB available (86% used)
-- V2 repository: `/home/ubuntu/homehub`
-- V2 data root: `/srv/homehub`
-- Git branch: `codex/v2-architecture`
+- Repository: `/home/ubuntu/homehub`
+- Data root: `/srv/homehub`
+- Git branch: `main`
 - Git remote: `git@gitee.com:zlx23/homehub.git` (private)
 - Public URL: `https://zlx2.com`
 
-## V2 loopback and public ports
+## Loopback and public ports
 
 | Port | Binding | Purpose |
 | --- | --- | --- |
@@ -29,7 +29,7 @@
 | 18120 | loopback | Drop |
 | 18181 | loopback | Traefik admin/ping |
 
-Existing public services outside V2 remain on MySQL `42061` and Redis `38291`.
+Existing public services outside HomeHub remain on MySQL `42061` and Redis `38291`.
 
 ## Runtime notes
 

@@ -222,7 +222,7 @@ services:
       HOMEHUB_IAM_DATABASE_PASSWORD_FILE: /run/secrets/iam_db_password
       HOMEHUB_IAM_OPENFGA_URL: http://openfga:8080
       HOMEHUB_IAM_SIGNING_KEY_FILE: /run/secrets/iam_signing_key
-      HOMEHUB_IAM_SIGNING_KEY_ID: v2-dev-1
+      HOMEHUB_IAM_SIGNING_KEY_ID: homehub-dev-1
       HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE: /run/secrets/root_agent_token
       HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE: /run/secrets/auth_encryption_key
       HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE: /run/secrets/owner_setup_token

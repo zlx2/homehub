@@ -3,7 +3,7 @@
 ## 1. 开发基线
 
 - Monorepo，服务器工作区 `/home/ubuntu/homehub`。
-- 活跃分支：`codex/v2-architecture`。
+- 活跃分支：`main`。
 - Gitee 远端：`git@gitee.com:zlx23/homehub.git`。
 - 探索阶段，允许短暂停机和重建容器，但必须明确操作范围。
 - 不要停止或改造仓库外的 MySQL、Redis、Hermes Agent 或其它既有容器。

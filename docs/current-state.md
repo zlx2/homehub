@@ -1,6 +1,6 @@
 # HomeHub 当前状态
 
-> 2026-07-19 · `/home/ubuntu/homehub` · `codex/v2-architecture`
+> 2026-07-19 · `/home/ubuntu/homehub` · `main`
 
 HomeHub 单栈：Cloudflare Tunnel → Traefik → IAM ForwardAuth → Portal / Control / Drop。
 
