@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Materialize HomeHub V2 runtime secrets from Bitwarden Secrets Manager.
+"""Materialize HomeHub runtime secrets from Bitwarden Secrets Manager.
 
 All secrets are read from BWS and written atomically to the runtime directory.
 Containers mount only the files they need as read-only bind mounts.
@@ -21,7 +21,7 @@ import tempfile
 BWS = "/usr/local/bin/bws"
 TOKEN_FILE = Path(os.environ.get("BWS_ACCESS_TOKEN_FILE", "/etc/homehub/bws-access-token"))
 PROJECT_NAME = os.environ.get("HOMEHUB_BWS_PROJECT", "HomeHub Production")
-RUNTIME_DIR = Path(os.environ.get("HOMEHUB_V2_RUNTIME_DIR", "/srv/homehub-v2/runtime"))
+RUNTIME_DIR = Path(os.environ.get("HOMEHUB_RUNTIME_DIR", "/srv/homehub/runtime"))
 
 DEFAULT_UID = 65532
 DEFAULT_GID = 65532

@@ -8,7 +8,7 @@
 ## P1
 
 1. 实现只读 Host Metrics 服务，由 Control 聚合 CPU、内存、根磁盘和 uptime。
-2. 为 `agent:hermes` 提供 V2 IAM 凭据交换客户端；Hermes 运行时仍与 HomeHub 独立。
+2. 为 `agent:hermes` 提供 IAM 凭据交换客户端；Hermes 运行时仍与 HomeHub 独立。
 3. 建立最小 CI：Go/Rust 编译、React 构建、Compose 配置校验和 secret 扫描。
 
 ## P2

@@ -1,4 +1,4 @@
-# ADR 0011: V2 identity and service architecture
+# ADR 0011: Identity and service architecture
 
 Status: accepted
 

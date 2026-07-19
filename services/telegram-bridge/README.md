@@ -55,15 +55,15 @@ values from the ignored `deploy/compose/.env` file.
 ## Development
 
 ```bash
-cd /home/ubuntu/homehub-v2/services/telegram-bridge
+cd /home/ubuntu/homehub/services/telegram-bridge
 go test ./...
 
-cd /home/ubuntu/homehub-v2
+cd /home/ubuntu/homehub
 make v2-up
 make test-telegram-bridge-integration
 ```
 
 The container uses host networking only to reach the loopback Mihomo proxy on
-`127.0.0.1:1081`. IAM and Drop are also reached only through their loopback V2
+`127.0.0.1:1081`. IAM and Drop are also reached only through their loopback
 ports. The health server binds only `127.0.0.1:8730`; it does not register a
 Traefik route.

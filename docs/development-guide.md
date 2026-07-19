@@ -2,7 +2,7 @@
 
 ## 1. 开发基线
 
-- Monorepo，服务器工作区 `/home/ubuntu/homehub-v2`。
+- Monorepo，服务器工作区 `/home/ubuntu/homehub`。
 - 活跃分支：`codex/v2-architecture`。
 - Gitee 远端：`git@gitee.com:zlx23/homehub.git`。
 - 探索阶段，允许短暂停机和重建容器，但必须明确操作范围。
@@ -14,7 +14,7 @@
 ## 2. 部署入口
 
 ```sh
-cd /home/ubuntu/homehub-v2
+cd /home/ubuntu/homehub
 
 make config     # 校验配置
 make build      # 只编译，不运行测试
@@ -122,7 +122,7 @@ workload credential → IAM token exchange → short-lived target token → targ
 
 ### Hermes / Agent
 
-Hermes 设计上是 `agent:hermes`，拥有 `system.root`。当前 Hermes Agent 仍独立运行，接入 V2 前需确认凭据保存与交换方式。
+Hermes 设计上是 `agent:hermes`，拥有 `system.root`。当前 Hermes Agent 仍独立运行，接入前需确认凭据保存与交换方式。
 
 ## 8. 密钥和配置
 
@@ -131,7 +131,7 @@ make install-bws
 make secrets-sync
 ```
 
-BWS 将 secret 写入 `/srv/homehub-v2/runtime`。容器只挂载自己需要的文件。
+BWS 将 secret 写入 `/srv/homehub/runtime`。容器只挂载自己需要的文件。
 
 禁止：
 - 把 secret 写进 Compose、Git、日志或聊天记录。

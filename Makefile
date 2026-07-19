@@ -54,7 +54,7 @@ test-control-integration: ## Verify live Control audience and permission enforce
 		-e HOMEHUB_CONTROL_INTEGRATION_URL=http://127.0.0.1:18110 \
 		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
 		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-v "$(CURDIR):/repo" -v /srv/homehub/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
 		-w /repo/apps/control golang:1.26.5-alpine3.24 go test -count=1 -run TestLiveControlAuthorization ./integration
 
 test-iam: ## Run IAM unit tests
@@ -69,7 +69,7 @@ test-iam-integration: ## Exchange and verify a live machine access token
 		-e HOMEHUB_IAM_INTEGRATION_URL=http://127.0.0.1:18100 \
 		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
 		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-v "$(CURDIR):/repo" -v /srv/homehub/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
 		-w /repo/apps/iam golang:1.26.5-alpine3.24 go test -count=1 -run 'Test(MachineCredentialExchange|RootCreatesBoundedWorkloadIdentity)$$' ./integration
 
 test-portal: ## Type-check and build the React portal
@@ -98,7 +98,7 @@ test-drop-integration: ## Upload, read, and delete a file through live Drop
 		-e HOMEHUB_DROP_INTEGRATION_URL=http://127.0.0.1:18120 \
 		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
 		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
-		-v "$(CURDIR):/repo" -v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-v "$(CURDIR):/repo" -v /srv/homehub/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
 		-w /repo/services/drop golang:1.26.5-alpine3.24 go test -count=1 -run TestLiveDropAuthorizationAndOriginalFile ./integration
 
 test-telegram-bridge: ## Run Telegram Bridge unit tests
@@ -114,8 +114,8 @@ test-telegram-bridge-integration: ## Verify Telegram workload can create but not
 		-e HOMEHUB_IAM_INTEGRATION_CREDENTIAL_FILE=/run/secrets/root_agent_token \
 		-e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
 		-v "$(CURDIR):/repo" \
-		-v /srv/homehub-v2/runtime/telegram_bridge_credential:/run/secrets/telegram_bridge_credential:ro \
-		-v /srv/homehub-v2/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
+		-v /srv/homehub/runtime/telegram_bridge_credential:/run/secrets/telegram_bridge_credential:ro \
+		-v /srv/homehub/runtime/root_agent_token:/run/secrets/root_agent_token:ro \
 		-w /repo/services/telegram-bridge golang:1.26.5-alpine3.24 go test -count=1 -run TestLiveBridgeIdentityCreatesButCannotReadDrop ./integration
 
 format-iam: ## Format IAM Go source

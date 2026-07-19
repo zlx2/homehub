@@ -1,4 +1,4 @@
-# HomeHub Drop V2
+# HomeHub Drop
 
 Drop is an independently deployable HomeHub business service with a Go API and
 its own React 19 frontend at `/drop/`.
@@ -41,12 +41,12 @@ cannot list, read, modify, or delete Drop items.
 ## Development
 
 ```sh
-cd /home/ubuntu/homehub-v2/services/drop
+cd /home/ubuntu/homehub/services/drop
 npm ci
 npm run check
 npm run build
 
-cd /home/ubuntu/homehub-v2
+cd /home/ubuntu/homehub
 make test-drop
 make test-drop-integration
 ```

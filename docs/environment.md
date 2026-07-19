@@ -9,8 +9,8 @@
 - Memory: 3.6 GiB total, approximately 2.5 GiB available at capture time
 - Swap: 4.0 GiB total, approximately 1.2 GiB used
 - Root filesystem: 40 GiB total, 33 GiB used, 5.3 GiB available (86% used)
-- V2 repository: `/home/ubuntu/homehub-v2`
-- V2 data root: `/srv/homehub-v2`
+- V2 repository: `/home/ubuntu/homehub`
+- V2 data root: `/srv/homehub`
 - Git branch: `codex/v2-architecture`
 - Git remote: `git@gitee.com:zlx23/homehub.git` (private)
 - Public URL: `https://zlx2.com`
@@ -40,6 +40,6 @@ Existing public services outside V2 remain on MySQL `42061` and Redis `38291`.
   they use host networking; otherwise internal names must be in `NO_PROXY` or
   proxy variables must be cleared.
 - Production secrets are materialized from Bitwarden Secrets Manager into
-  `/srv/homehub-v2/runtime`. Never print or commit those files.
+  `/srv/homehub/runtime`. Never print or commit those files.
 - The root disk is the immediate capacity constraint. Inspect Docker build cache
   and unused images before large rebuild cycles.

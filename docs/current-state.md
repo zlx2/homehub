@@ -1,8 +1,8 @@
 # HomeHub 当前状态
 
-> 2026-07-19 · `/home/ubuntu/homehub-v2` · `codex/v2-architecture`
+> 2026-07-19 · `/home/ubuntu/homehub` · `codex/v2-architecture`
 
-HomeHub 只保留 V2 单栈：Cloudflare Tunnel → Traefik → IAM ForwardAuth → Portal / Control / Drop。
+HomeHub 单栈：Cloudflare Tunnel → Traefik → IAM ForwardAuth → Portal / Control / Drop。
 
 ## 运行组件
 
@@ -15,7 +15,7 @@ HomeHub 只保留 V2 单栈：Cloudflare Tunnel → Traefik → IAM ForwardAuth 
 | Telegram Bridge | Telegram → Drop | 无 |
 | AI Gateway | 模型别名、权限白名单和 SSE 代理 | 无，仅内网 |
 
-PostgreSQL 持久化 IAM、OpenFGA 和 Drop 独立数据库。运行密钥位于 `/srv/homehub-v2/runtime`，Drop 文件位于 `/srv/homehub-v2/data/drop`。
+PostgreSQL 持久化 IAM、OpenFGA 和 Drop 独立数据库。运行密钥位于 `/srv/homehub/runtime`，Drop 文件位于 `/srv/homehub/data/drop`。
 
 ## 已知缺口
 

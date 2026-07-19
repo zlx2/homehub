@@ -12,7 +12,7 @@ client
 ```
 
 1. A client connects to `zlx2.com` over HTTPS.
-2. Cloudflare Tunnel carries the request to the V2 Traefik origin.
+2. Cloudflare Tunnel carries the request to the Traefik origin.
 3. Traefik clears client-supplied authorization context and tells IAM which
    audience is being requested.
 4. IAM validates the HomeHub browser session or direct-share capability and
@@ -40,17 +40,17 @@ browser edge and exchange their own machine credential directly with IAM.
 
 ## Network intent
 
-- `homehub-v2-edge`: Traefik, Cloudflared, IAM, Control, Portal, and explicitly
+- `homehub-edge`: Traefik, Cloudflared, IAM, Control, Portal, and explicitly
   routed services.
-- `homehub-v2-backend`: internal service APIs and IAM/OpenFGA communication;
+- `homehub-backend`: internal service APIs and IAM/OpenFGA communication;
   marked internal.
-- `homehub-v2-data`: PostgreSQL and authorized clients; marked internal.
-- `homehub-v2-egress`: outbound provider access for AI Gateway only.
+- `homehub-data`: PostgreSQL and authorized clients; marked internal.
+- `homehub-egress`: outbound provider access for AI Gateway only.
 - Telegram Bridge currently uses host networking only to reach the host Mihomo
-  proxy and loopback V2 endpoints.
+  proxy and loopback endpoints.
 - PostgreSQL and OpenFGA are not public.
 - Existing MySQL `42061` and Redis `38291` public endpoints are intentionally
-  preserved outside the V2 trust boundary.
+  preserved outside the HomeHub trust boundary.
 
 ## UI boundary
 

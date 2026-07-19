@@ -1,9 +1,9 @@
-# HomeHub V2 network model
+# HomeHub network model
 
 ## Public domain edge
 
 `zlx2.com` and `www.zlx2.com` are carried through a remotely managed Cloudflare
-Tunnel. The `cloudflared` container joins `homehub-v2-edge`, opens no host port,
+Tunnel. The `cloudflared` container joins `homehub-edge`, opens no host port,
 and forwards both hostnames to the Traefik HTTPS origin.
 
 The Tunnel route keeps TLS verification enabled and uses `zlx2.com` as the
@@ -15,18 +15,18 @@ a read-only runtime file. It is not stored in Compose, `.env`, or Git.
 
 ## Docker networks
 
-### `homehub-v2-edge`
+### `homehub-edge`
 
 Members: Traefik, Cloudflared, ACME Challenge, IAM, Control, Drop, and Portal.
 Only Traefik publishes public ports. Services on this network are reachable
 publicly only when `deploy/traefik/dynamic/routes.yaml` defines a router.
 
-### `homehub-v2-backend`
+### `homehub-backend`
 
 Internal network for IAM, Control, OpenFGA, Drop, and other future east-west
 APIs. It is marked `internal: true`.
 
-### `homehub-v2-data`
+### `homehub-data`
 
 Internal PostgreSQL network. PostgreSQL has no public or loopback host port.
 
@@ -38,7 +38,7 @@ binds its own health endpoint only to `127.0.0.1:8730`.
 
 ## Host bindings
 
-- `0.0.0.0:80` and `0.0.0.0:443`: V2 Traefik.
+- `0.0.0.0:80` and `0.0.0.0:443`: Traefik.
 - `127.0.0.1:18080`: Portal direct check.
 - `127.0.0.1:18100`: IAM direct check/integration tests.
 - `127.0.0.1:18101`: OpenFGA HTTP.
@@ -47,7 +47,7 @@ binds its own health endpoint only to `127.0.0.1:8730`.
 - `127.0.0.1:18181`: Traefik admin/ping.
 - `127.0.0.1:8730`: Telegram Bridge health.
 
-MySQL `42061` and Redis `38291` remain deliberately public outside HomeHub V2.
+MySQL `42061` and Redis `38291` remain deliberately public outside HomeHub.
 They are not protected by IAM ForwardAuth.
 
 ## Route policy

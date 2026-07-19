@@ -1,4 +1,4 @@
-name: homehub-v2
+name: homehub
 
 services:
   traefik:
@@ -31,7 +31,7 @@ services:
     volumes:
       - ../traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
       - ../traefik/dynamic:/etc/traefik/dynamic:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/tls-zlx2:/run/homehub-domain-tls:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/tls-zlx2:/run/homehub-domain-tls:ro
     read_only: true
     tmpfs:
       - /tmp
@@ -69,7 +69,7 @@ services:
     networks:
       - edge
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/cloudflare_tunnel_token:/run/secrets/cloudflare_tunnel_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/cloudflare_tunnel_token:/run/secrets/cloudflare_tunnel_token:ro
     read_only: true
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
@@ -98,7 +98,7 @@ services:
     networks:
       - edge
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/acme-webroot:/usr/share/nginx/html:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/acme-webroot:/usr/share/nginx/html:ro
       - ../acme/nginx.conf:/etc/nginx/nginx.conf:ro
     read_only: true
     tmpfs:
@@ -139,10 +139,10 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/postgres_superuser_password:/run/secrets/postgres_superuser_password:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/postgres_superuser_password:/run/secrets/postgres_superuser_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
@@ -156,7 +156,7 @@ services:
     build:
       context: .
       dockerfile: openfga.Dockerfile
-    image: homehub/openfga:v2-wrapper
+    image: homehub/openfga:wrapper
     depends_on:
       postgres:
         condition: service_healthy
@@ -168,7 +168,7 @@ services:
     networks:
       - data
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -177,7 +177,7 @@ services:
     build:
       context: .
       dockerfile: openfga.Dockerfile
-    image: homehub/openfga:v2-wrapper
+    image: homehub/openfga:wrapper
     restart: unless-stopped
     depends_on:
       openfga-migrate:
@@ -199,12 +199,12 @@ services:
     ports:
       - "127.0.0.1:18101:8080"
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/openfga_db_password:/run/secrets/openfga_db_password:ro
     security_opt:
       - no-new-privileges:true
 
   iam:
-    image: homehub/iam:v2-local
+    image: homehub/iam:local
     build:
       context: ../..
       dockerfile: apps/iam/Dockerfile
@@ -226,10 +226,10 @@ services:
       HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE: /run/secrets/root_agent_token
       HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE: /run/secrets/auth_encryption_key
       HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE: /run/secrets/owner_setup_token
-      HOMEHUB_IAM_ALLOWED_ORIGINS: ${V2_ALLOWED_ORIGINS:-https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080}
-      HOMEHUB_IAM_SECURE_COOKIES: ${V2_SECURE_COOKIES:-true}
-      HOMEHUB_IAM_PASSKEY_RP_ID: ${V2_PASSKEY_RP_ID:-zlx2.com}
-      HOMEHUB_IAM_PASSKEY_ORIGINS: ${V2_PASSKEY_ORIGINS:-https://zlx2.com}
+      HOMEHUB_IAM_ALLOWED_ORIGINS: ${HOMEHUB_IAM_ALLOWED_ORIGINS:-https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080}
+      HOMEHUB_IAM_SECURE_COOKIES: ${HOMEHUB_IAM_SECURE_COOKIES:-true}
+      HOMEHUB_IAM_PASSKEY_RP_ID: ${HOMEHUB_IAM_PASSKEY_RP_ID:-zlx2.com}
+      HOMEHUB_IAM_PASSKEY_ORIGINS: ${HOMEHUB_IAM_PASSKEY_ORIGINS:-https://zlx2.com}
     networks:
       - edge
       - backend
@@ -238,11 +238,11 @@ services:
       - "127.0.0.1:18100:8080"
     read_only: true
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_signing_key:/run/secrets/iam_signing_key:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/auth_encryption_key:/run/secrets/auth_encryption_key:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/owner_setup_token:/run/secrets/owner_setup_token:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_signing_key:/run/secrets/iam_signing_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/root_agent_token:/run/secrets/root_agent_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/auth_encryption_key:/run/secrets/auth_encryption_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/owner_setup_token:/run/secrets/owner_setup_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/iam_db_password:/run/secrets/iam_db_password:ro
     tmpfs:
       - /tmp
     healthcheck:
@@ -257,7 +257,7 @@ services:
       - ALL
 
   control:
-    image: homehub/control:v2-local
+    image: homehub/control:local
     build:
       context: ../..
       dockerfile: apps/control/Dockerfile
@@ -296,7 +296,7 @@ services:
       - ALL
 
   ai-gateway:
-    image: homehub/ai-gateway:v2-local
+    image: homehub/ai-gateway:local
     build:
       context: ../..
       dockerfile: services/ai-gateway/Dockerfile
@@ -315,8 +315,8 @@ services:
     read_only: true
     volumes:
       - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/ai_deepseek_api_key:/run/secrets/ai_deepseek_api_key:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/ai_opencode_go_api_key:/run/secrets/ai_opencode_go_api_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/ai_deepseek_api_key:/run/secrets/ai_deepseek_api_key:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/ai_opencode_go_api_key:/run/secrets/ai_opencode_go_api_key:ro
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
     healthcheck:
@@ -331,7 +331,7 @@ services:
       - ALL
 
   drop:
-    image: homehub/drop:v2-local
+    image: homehub/drop:local
     build:
       context: ../..
       dockerfile: services/drop/Dockerfile
@@ -359,8 +359,8 @@ services:
       - "127.0.0.1:18120:8080"
     read_only: true
     volumes:
-      - ${V2_DATA_ROOT:-/srv/homehub-v2/data}/drop:/data
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
+      - ${HOMEHUB_DATA_ROOT:-/srv/homehub/data}/drop:/data
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/drop_db_password:/run/secrets/drop_db_password:ro
     tmpfs:
       - /tmp
     healthcheck:
@@ -375,7 +375,7 @@ services:
       - ALL
 
   telegram-bridge:
-    image: homehub/telegram-bridge:v2-local
+    image: homehub/telegram-bridge:local
     build:
       context: ../..
       dockerfile: services/telegram-bridge/Dockerfile
@@ -405,8 +405,8 @@ services:
       no_proxy: localhost,127.0.0.1
     read_only: true
     volumes:
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/telegram_bot_token:/run/secrets/telegram_bot_token:ro
-      - ${V2_RUNTIME_ROOT:-/srv/homehub-v2/runtime}/telegram_bridge_credential:/run/secrets/iam_machine_credential:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/telegram_bot_token:/run/secrets/telegram_bot_token:ro
+      - ${HOMEHUB_RUNTIME_ROOT:-/srv/homehub/runtime}/telegram_bridge_credential:/run/secrets/iam_machine_credential:ro
     tmpfs:
       - /tmp:uid=65532,gid=65532,mode=0700
     healthcheck:
@@ -421,7 +421,7 @@ services:
       - ALL
 
   portal:
-    image: homehub/portal:v2-local
+    image: homehub/portal:local
     build:
       context: ../..
       dockerfile: apps/portal/Dockerfile
@@ -457,16 +457,16 @@ services:
 
 networks:
   edge:
-    name: homehub-v2-edge
+    name: homehub-edge
   backend:
-    name: homehub-v2-backend
+    name: homehub-backend
     internal: true
   egress:
-    name: homehub-v2-egress
+    name: homehub-egress
   data:
-    name: homehub-v2-data
+    name: homehub-data
     internal: true
 
 volumes:
   postgres-data:
-    name: homehub-v2-postgres
+    name: homehub-postgres

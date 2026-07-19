@@ -1,4 +1,4 @@
-# V2 component boundaries
+# Component boundaries
 
 ## Runtime components
 

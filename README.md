@@ -41,7 +41,7 @@ services.yaml          统一服务元数据（IAM manifest / Control catalog / 
 ## 常用命令
 
 ```sh
-cd /home/ubuntu/homehub-v2
+cd /home/ubuntu/homehub
 
 make config              # 校验 Compose
 make build               # 只编译 Go/Rust/React，不运行测试
@@ -63,7 +63,7 @@ make test-portal
 - [当前状态](docs/current-state.md)
 - [后续路线](docs/next-steps.md)
 - [架构总览](docs/architecture/overview.md)
-- [V2 组件边界](docs/architecture/v2-boundaries.md)
+- [组件边界](docs/architecture/component-boundaries.md)
 - [网络架构](docs/architecture/networking.md)
 - [ADR 目录](docs/adr/)
 

@@ -1,7 +1,7 @@
 # Deployment
 
 ```sh
-cd /home/ubuntu/homehub-v2
+cd /home/ubuntu/homehub
 
 cp deploy/compose/.env.example deploy/compose/.env   # first time only
 # edit .env with local runtime values; never commit it
@@ -13,7 +13,7 @@ make logs       # follow logs
 make down       # stop
 ```
 
-Persistent data: `/srv/homehub-v2` + PostgreSQL Docker volume `homehub-v2-postgres`.
+Persistent data: `/srv/homehub` + PostgreSQL Docker volume `homehub-postgres`.
 
 Secrets are managed by Bitwarden Secrets Manager:
 
