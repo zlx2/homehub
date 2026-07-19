@@ -31,7 +31,24 @@ down: ## Stop all services without deleting data
 	@docker compose $(COMPOSE_ARGS) down
 
 logs: ## Follow all service logs
-	@docker compose $(COMPOSE_ARGS) logs -f iam control ai-gateway drop telegram-bridge openfga postgres portal
+	@docker compose $(COMPOSE_ARGS) logs -f iam control drop telegram-bridge openfga postgres portal
+
+ai-up: ## Start AI Gateway (optional profile)
+	@echo "Checking AI provider keys..."
+	@test -s /srv/homehub/runtime/ai_deepseek_api_key || { echo "ERROR: ai_deepseek_api_key missing or empty"; exit 1; }
+	@test -s /srv/homehub/runtime/ai_opencode_go_api_key || { echo "ERROR: ai_opencode_go_api_key missing or empty"; exit 1; }
+	@stat -c '%a %u:%g' /srv/homehub/runtime/ai_deepseek_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: ai_deepseek_api_key wrong permissions"; exit 1; }
+	@stat -c '%a %u:%g' /srv/homehub/runtime/ai_opencode_go_api_key | grep -q '^400 65532:65532$$' || { echo "ERROR: ai_opencode_go_api_key wrong permissions"; exit 1; }
+	@docker compose $(COMPOSE_ARGS) --profile ai up -d --build --wait --wait-timeout 30 ai-gateway
+
+ai-down: ## Stop AI Gateway
+	@docker compose $(COMPOSE_ARGS) --profile ai down ai-gateway
+
+ai-logs: ## Follow AI Gateway logs
+	@docker compose $(COMPOSE_ARGS) --profile ai logs -f ai-gateway
+
+ai-check: ## Health-check AI Gateway
+	@curl --fail --silent http://127.0.0.1:18130/health/ready >/dev/null
 
 build: ## Compile every application without running tests
 	@docker compose $(COMPOSE_ARGS) build

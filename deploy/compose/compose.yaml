@@ -297,6 +297,8 @@ services:
 
   ai-gateway:
     image: homehub/ai-gateway:local
+    profiles:
+      - ai
     build:
       context: ../..
       dockerfile: services/ai-gateway/Dockerfile
@@ -312,6 +314,8 @@ services:
     networks:
       - backend
       - egress
+    ports:
+      - "127.0.0.1:18130:8080"
     read_only: true
     volumes:
       - ../ai-gateway/providers.json:/etc/homehub-ai/providers.json:ro
