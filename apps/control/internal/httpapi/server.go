@@ -9,8 +9,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"homehub.local/control/internal/catalog"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/apps/control/internal/catalog"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 const (

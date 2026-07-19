@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"homehub.local/control/internal/catalog"
-	"homehub.local/control/internal/config"
-	"homehub.local/control/internal/httpapi"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/apps/control/internal/catalog"
+	"gitee.com/zlx23/homehub/apps/control/internal/config"
+	"gitee.com/zlx23/homehub/apps/control/internal/httpapi"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 var version = "dev"

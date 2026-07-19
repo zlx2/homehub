@@ -1,0 +1,10 @@
+go 1.26.5
+
+use (
+	./apps/control
+	./apps/iam
+	./packages/go-sdk
+	./services/ai-gateway
+	./services/drop
+	./services/telegram-bridge
+)

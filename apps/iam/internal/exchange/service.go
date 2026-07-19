@@ -9,7 +9,7 @@ import (
 
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 const maxRequestedPermissions = 32

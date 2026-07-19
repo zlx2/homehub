@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"homehub.local/go-sdk/identity"
-	"homehub.local/services/ai-gateway/internal/config"
-	"homehub.local/services/ai-gateway/internal/gateway"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
+	"gitee.com/zlx23/homehub/services/ai-gateway/internal/config"
+	"gitee.com/zlx23/homehub/services/ai-gateway/internal/gateway"
 )
 
 func TestHealthDoesNotRequireIdentity(t *testing.T) {

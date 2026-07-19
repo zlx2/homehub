@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"homehub.local/services/telegram-bridge/internal/drop"
-	bridgeiam "homehub.local/services/telegram-bridge/internal/iam"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/drop"
+	bridgeiam "gitee.com/zlx23/homehub/services/telegram-bridge/internal/iam"
 )
 
 func TestLiveBridgeIdentityCreatesButCannotReadDrop(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 type stubVerifier struct {

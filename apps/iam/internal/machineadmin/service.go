@@ -11,7 +11,7 @@ import (
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/domain"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 const maxGrants = 16

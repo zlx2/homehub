@@ -20,7 +20,7 @@ import (
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
 	"gitee.com/zlx23/homehub/apps/iam/manifests"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 var version = "dev"

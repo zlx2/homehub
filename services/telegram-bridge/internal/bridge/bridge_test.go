@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"homehub.local/services/telegram-bridge/internal/config"
-	"homehub.local/services/telegram-bridge/internal/drop"
-	"homehub.local/services/telegram-bridge/internal/telegram"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/config"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/drop"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/telegram"
 )
 
 type fakeTelegram struct {

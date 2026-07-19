@@ -14,7 +14,7 @@ import (
 	"gitee.com/zlx23/homehub/services/drop/internal/config"
 	"gitee.com/zlx23/homehub/services/drop/internal/httpapi"
 	"gitee.com/zlx23/homehub/services/drop/internal/store"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 func main() {

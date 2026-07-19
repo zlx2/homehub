@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/domain"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 var (

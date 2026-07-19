@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"homehub.local/go-sdk/httpx"
-	"homehub.local/go-sdk/identity"
-	"homehub.local/services/ai-gateway/internal/gateway"
+	"gitee.com/zlx23/homehub/packages/go-sdk/httpx"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
+	"gitee.com/zlx23/homehub/services/ai-gateway/internal/gateway"
 )
 
 const maxRequestBody = 4 << 20

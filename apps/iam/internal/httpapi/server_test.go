@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"gitee.com/zlx23/homehub/apps/iam/internal/machineadmin"
-	"homehub.local/go-sdk/identity"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 type fakeVerifier struct {

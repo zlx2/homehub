@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"homehub.local/services/telegram-bridge/internal/bridge"
-	"homehub.local/services/telegram-bridge/internal/config"
-	"homehub.local/services/telegram-bridge/internal/drop"
-	"homehub.local/services/telegram-bridge/internal/iam"
-	"homehub.local/services/telegram-bridge/internal/telegram"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/bridge"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/config"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/drop"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/iam"
+	"gitee.com/zlx23/homehub/services/telegram-bridge/internal/telegram"
 )
 
 const serviceName = "telegram-bridge"

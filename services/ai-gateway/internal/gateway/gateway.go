@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"homehub.local/services/ai-gateway/internal/config"
+	"gitee.com/zlx23/homehub/services/ai-gateway/internal/config"
 )
 
 var (

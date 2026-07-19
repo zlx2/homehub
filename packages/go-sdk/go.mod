@@ -1,5 +1,4 @@
-module homehub.local/go-sdk
+module gitee.com/zlx23/homehub/packages/go-sdk
 
-go 1.26.0
+go 1.26.5
 
-toolchain go1.26.5

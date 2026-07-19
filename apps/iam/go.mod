@@ -7,7 +7,7 @@ require github.com/jackc/pgx/v5 v5.7.6
 require (
 	github.com/go-webauthn/webauthn v0.17.4
 	golang.org/x/crypto v0.52.0
-	homehub.local/go-sdk v0.0.0
+	gitee.com/zlx23/homehub/packages/go-sdk v0.0.0
 )
 
 require (
@@ -28,4 +28,4 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 )
 
-replace homehub.local/go-sdk => ../../packages/go-sdk
+replace gitee.com/zlx23/homehub/packages/go-sdk => ../../packages/go-sdk
