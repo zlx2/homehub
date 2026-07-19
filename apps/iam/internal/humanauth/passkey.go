@@ -90,12 +90,12 @@ func (service *Service) FinishPasskeyRegistration(ctx context.Context, principal
 	if len(name) > 80 {
 		return ErrPasskey
 	}
-	_, err = service.pool.Exec(ctx, `INSERT INTO webauthn_credentials(credential_id,principal_id,name,credential_cipher,credential_nonce)
+	_, err = service.pool.Exec(ctx, `INSERT INTO webauthn_credentials(credential_id,owner_id,name,credential_cipher,credential_nonce)
 		VALUES($1,$2::uuid,$3,$4,$5)`, credential.ID, principal.ID, name, cipherText, nonce)
 	if err != nil {
 		return ErrPasskey
 	}
-	service.audit(ctx, principal.ID, "passkey.register", "success", "", nil)
+	service.audit(ctx, "passkey.register", "success", "", nil)
 	return nil
 }
 
@@ -140,7 +140,7 @@ func (service *Service) FinishPasskeyLogin(ctx context.Context, ceremonyToken, r
 	}
 	credential, err := service.passkeys.FinishDiscoverableLogin(handler, *sessionData, request)
 	if err != nil || selected == nil {
-		service.audit(ctx, "", "passkey.login", "denied", remoteIP, nil)
+		service.audit(ctx, "passkey.login", "denied", remoteIP, nil)
 		return Session{}, ErrInvalidCredentials
 	}
 	encoded, err := json.Marshal(credential)
@@ -151,30 +151,30 @@ func (service *Service) FinishPasskeyLogin(ctx context.Context, ceremonyToken, r
 	if err != nil {
 		return Session{}, err
 	}
-	transaction, err := service.pool.Begin(ctx)
+	tx, err := service.pool.Begin(ctx)
 	if err != nil {
 		return Session{}, err
 	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	result, err := transaction.Exec(ctx, `UPDATE webauthn_credentials SET credential_cipher=$2,credential_nonce=$3,last_used_at=now()
-		WHERE credential_id=$1 AND principal_id=$4::uuid`, credential.ID, cipherText, nonce, selected.ID)
+	defer func() { _ = tx.Rollback(ctx) }()
+	result, err := tx.Exec(ctx, `UPDATE webauthn_credentials SET credential_cipher=$2,credential_nonce=$3,last_used_at=now()
+		WHERE credential_id=$1 AND owner_id=$4::uuid`, credential.ID, cipherText, nonce, selected.ID)
 	if err != nil || result.RowsAffected() != 1 {
 		return Session{}, ErrInvalidCredentials
 	}
-	created, err := createSession(ctx, transaction, selected.Principal, []string{"passkey"}, service.now().UTC(), sessionAbsoluteTTL, remoteIP, userAgent)
+	session, err := service.createSessionTx(ctx, tx, selected.ID, selected.Username, selected.DisplayName, "human", []string{"passkey"}, remoteIP, userAgent)
 	if err != nil {
 		return Session{}, err
 	}
-	if err := transaction.Commit(ctx); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return Session{}, err
 	}
-	service.audit(ctx, selected.ID, "passkey.login", "success", remoteIP, nil)
-	return created, nil
+	service.audit(ctx, "passkey.login", "success", remoteIP, nil)
+	return session, nil
 }
 
 func (service *Service) ListPasskeys(ctx context.Context, principal Principal) ([]PasskeyCredential, error) {
 	rows, err := service.pool.Query(ctx, `SELECT credential_id,name,created_at,last_used_at FROM webauthn_credentials
-		WHERE principal_id=$1::uuid ORDER BY created_at`, principal.ID)
+		WHERE owner_id=$1::uuid ORDER BY created_at`, principal.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,28 +197,26 @@ func (service *Service) DeletePasskey(ctx context.Context, principal Principal, 
 	if err != nil || len(id) == 0 || len(id) > 1024 {
 		return false, ErrPasskey
 	}
-	result, err := service.pool.Exec(ctx, `DELETE FROM webauthn_credentials WHERE credential_id=$1 AND principal_id=$2::uuid`, id, principal.ID)
+	result, err := service.pool.Exec(ctx, `DELETE FROM webauthn_credentials WHERE credential_id=$1 AND owner_id=$2::uuid`, id, principal.ID)
 	if err == nil && result.RowsAffected() == 1 {
-		service.audit(ctx, principal.ID, "passkey.delete", "success", "", nil)
+		service.audit(ctx, "passkey.delete", "success", "", nil)
 		return true, nil
 	}
 	return false, err
 }
 
-func (service *Service) loadWebAuthnUser(ctx context.Context, principalID string) (webAuthnUser, error) {
+func (service *Service) loadWebAuthnUser(ctx context.Context, ownerID string) (webAuthnUser, error) {
 	var user webAuthnUser
-	err := service.pool.QueryRow(ctx, `SELECT p.id::text,p.kind,p.display_name,r.slug,COALESCE(e.attributes->>'username',e.external_subject,'')
-		FROM principals p JOIN realms r ON r.id=p.realm_id LEFT JOIN external_accounts e ON e.principal_id=p.id AND e.provider='homehub-username'
-		WHERE p.id=$1::uuid AND p.kind='human' AND p.status='active' AND p.deleted_at IS NULL`, principalID).
-		Scan(&user.ID, &user.Kind, &user.DisplayName, &user.Realm, &user.Username)
+	err := service.pool.QueryRow(ctx, `SELECT id::text,username,display_name FROM owner WHERE id=$1::uuid AND status='active'`, ownerID).
+		Scan(&user.ID, &user.Username, &user.DisplayName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return webAuthnUser{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return webAuthnUser{}, err
 	}
-	user.Subject = "human:" + user.ID
-	rows, err := service.pool.Query(ctx, `SELECT credential_cipher,credential_nonce FROM webauthn_credentials WHERE principal_id=$1::uuid`, user.ID)
+	user.Kind = "human"
+	rows, err := service.pool.Query(ctx, `SELECT credential_cipher,credential_nonce FROM webauthn_credentials WHERE owner_id=$1::uuid`, user.ID)
 	if err != nil {
 		return webAuthnUser{}, err
 	}
@@ -241,7 +239,7 @@ func (service *Service) loadWebAuthnUser(ctx context.Context, principalID string
 	return user, rows.Err()
 }
 
-func (service *Service) storePasskeyCeremony(ctx context.Context, kind, principalID string, session *webauthn.SessionData) (string, error) {
+func (service *Service) storePasskeyCeremony(ctx context.Context, kind, ownerID string, session *webauthn.SessionData) (string, error) {
 	encoded, err := json.Marshal(session)
 	if err != nil {
 		return "", err
@@ -256,24 +254,24 @@ func (service *Service) storePasskeyCeremony(ctx context.Context, kind, principa
 	}
 	digest := hashSecret(tokenValue)
 	_, _ = service.pool.Exec(ctx, `DELETE FROM webauthn_ceremonies WHERE expires_at<=now()`)
-	_, err = service.pool.Exec(ctx, `INSERT INTO webauthn_ceremonies(token_hash,principal_id,kind,session_cipher,session_nonce,expires_at)
-		VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5,$6)`, digest[:], principalID, kind, cipherText, nonce, service.now().UTC().Add(passkeyCeremonyTTL))
+	_, err = service.pool.Exec(ctx, `INSERT INTO webauthn_ceremonies(token_hash,owner_id,kind,session_cipher,session_nonce,expires_at)
+		VALUES($1,NULLIF($2,'')::uuid,$3,$4,$5,$6)`, digest[:], ownerID, kind, cipherText, nonce, service.now().UTC().Add(passkeyCeremonyTTL))
 	return tokenValue, err
 }
 
-func (service *Service) takePasskeyCeremony(ctx context.Context, kind, principalID, tokenValue string) (*webauthn.SessionData, error) {
+func (service *Service) takePasskeyCeremony(ctx context.Context, kind, ownerID, tokenValue string) (*webauthn.SessionData, error) {
 	if len(tokenValue) < 32 {
 		return nil, ErrPasskey
 	}
 	digest := hashSecret(tokenValue)
 	var cipherText, nonce []byte
 	var err error
-	if principalID == "" {
-		err = service.pool.QueryRow(ctx, `DELETE FROM webauthn_ceremonies WHERE token_hash=$1 AND kind=$2 AND principal_id IS NULL AND expires_at>now()
+	if ownerID == "" {
+		err = service.pool.QueryRow(ctx, `DELETE FROM webauthn_ceremonies WHERE token_hash=$1 AND kind=$2 AND owner_id IS NULL AND expires_at>now()
 			RETURNING session_cipher,session_nonce`, digest[:], kind).Scan(&cipherText, &nonce)
 	} else {
-		err = service.pool.QueryRow(ctx, `DELETE FROM webauthn_ceremonies WHERE token_hash=$1 AND kind=$2 AND principal_id=$3::uuid AND expires_at>now()
-			RETURNING session_cipher,session_nonce`, digest[:], kind, principalID).Scan(&cipherText, &nonce)
+		err = service.pool.QueryRow(ctx, `DELETE FROM webauthn_ceremonies WHERE token_hash=$1 AND kind=$2 AND owner_id=$3::uuid AND expires_at>now()
+			RETURNING session_cipher,session_nonce`, digest[:], kind, ownerID).Scan(&cipherText, &nonce)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrPasskey

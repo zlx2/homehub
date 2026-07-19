@@ -1,10 +1,8 @@
 export type Principal = {
   id: string;
-  subject: string;
-  kind: 'human' | 'guest';
   username?: string;
   display_name: string;
-  realm: string;
+  kind: string;
 };
 
 export type SessionState = {
@@ -39,6 +37,41 @@ export type PasskeyCredential = {
   last_used_at?: string;
 };
 
+export type SessionInfo = {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  remote_ip: string;
+  auth_methods: string[];
+  revoked_at?: string;
+};
+
+export type APIKeyInfo = {
+  id: string;
+  name: string;
+  kind: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at?: string;
+  last_used_ip?: string;
+  expires_at?: string;
+  revoked_at?: string;
+};
+
+export type ShareInfo = {
+  id: string;
+  share_type: string;
+  service_id: string;
+  resource_type?: string;
+  resource_id?: string;
+  actions: string[];
+  expires_at: string;
+  max_uses?: number;
+  use_count: number;
+  revoked_at?: string;
+  created_at: string;
+};
+
 function cookie(name: string) {
   return document.cookie.split('; ').find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) ?? '';
 }
@@ -70,12 +103,22 @@ export const iam = {
   passkeys: () => request<{ passkeys: PasskeyCredential[] }>('/api/iam/v1/passkeys'),
   deletePasskey: (id: string) => request<void>(`/api/iam/v1/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   logout: () => request<void>('/api/iam/v1/logout', { method: 'POST' }),
-  redeem: (token: string) => request<SessionState>('/api/iam/v1/shares/redeem', { method: 'POST', body: JSON.stringify({ token }) }),
-  shares: () => request<{ shares: Array<{ id: string; grants: Array<{ service_id: string; relation: string }>; expires_at: string; revoked_at?: string }> }>('/api/iam/v1/shares'),
-  createShare: (hours: number) => request<{ id: string; token: string; expires_at: string }>('/api/iam/v1/shares', {
-    method: 'POST', body: JSON.stringify({ grants: [{ service_id: 'drop', relation: 'viewer' }], expires_at: new Date(Date.now() + hours * 3600_000).toISOString() }),
-  }),
+
+  // Sessions
+  sessions: () => request<{ sessions: SessionInfo[]; current_session_id: string }>('/api/iam/v1/sessions'),
+  revokeSession: (id: string) => request<void>(`/api/iam/v1/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  revokeOtherSessions: () => request<{ revoked: number }>('/api/iam/v1/sessions', { method: 'DELETE' }),
+
+  // API Keys
+  apiKeys: () => request<{ api_keys: APIKeyInfo[] }>('/api/iam/v1/api-keys'),
+  createAPIKey: (body: { name: string; kind: string; scopes: string[]; expires_in_days?: number }) => request<{ id: string; token: string; name: string; kind: string }>('/api/iam/v1/api-keys', { method: 'POST', body: JSON.stringify(body) }),
+  revokeAPIKey: (id: string) => request<void>(`/api/iam/v1/api-keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // Shares
+  shares: () => request<{ shares: ShareInfo[] }>('/api/iam/v1/shares'),
+  createShare: (body: object) => request<{ id: string; token: string; share_type: string }>('/api/iam/v1/shares', { method: 'POST', body: JSON.stringify(body) }),
   revokeShare: (id: string) => request<void>(`/api/iam/v1/shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  redeem: (token: string) => request<SessionState>('/api/iam/v1/shares/redeem', { method: 'POST', body: JSON.stringify({ token }) }),
 };
 
 export const drop = {

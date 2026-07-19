@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -37,8 +36,8 @@ const (
 	passwordThreads    = uint8(2)
 	passwordKeyLength  = uint32(32)
 	setupTTL           = 15 * time.Minute
-	sessionIdleTTL     = 12 * time.Hour
-	sessionAbsoluteTTL = 7 * 24 * time.Hour
+	sessionIdleTTL     = 30 * 24 * time.Hour
+	sessionAbsoluteTTL = 180 * 24 * time.Hour
 	maxShares          = 100
 )
 
@@ -52,20 +51,10 @@ var (
 	ErrInvalidCSRF        = errors.New("invalid csrf")
 	ErrForbidden          = errors.New("forbidden")
 	ErrInvalidShare       = errors.New("invalid share")
+	ErrInvalidAPIKey      = errors.New("invalid api key")
 	ErrPasskey            = errors.New("invalid passkey ceremony")
 	usernamePattern       = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`)
 )
-
-type Authorization interface {
-	Check(context.Context, storepostgres.AuthorizationState, string, string, string) (bool, error)
-	WriteRelationship(context.Context, storepostgres.AuthorizationState, string, string, string) error
-	DeleteRelationship(context.Context, storepostgres.AuthorizationState, string, string, string) error
-}
-
-type PolicyStore interface {
-	AudiencePolicy(context.Context, string) (storepostgres.AudiencePolicy, error)
-	ServiceRelationExists(context.Context, string, string) (bool, error)
-}
 
 type TokenSigner interface {
 	Issue(token.IssueRequest) (string, identity.Claims, error)
@@ -75,9 +64,6 @@ type Options struct {
 	DatabaseURL        string
 	EncryptionKeyFile  string
 	BootstrapTokenFile string
-	Authorization      Authorization
-	AuthorizationState storepostgres.AuthorizationState
-	Policies           PolicyStore
 	Signer             TokenSigner
 	PasskeyRPID        string
 	PasskeyOrigins     []string
@@ -85,10 +71,8 @@ type Options struct {
 
 type Service struct {
 	pool          *pgxpool.Pool
+	store         *storepostgres.Store
 	aead          cipher.AEAD
-	authorization Authorization
-	state         storepostgres.AuthorizationState
-	policies      PolicyStore
 	signer        TokenSigner
 	dummyPassword string
 	hashSlots     chan struct{}
@@ -97,15 +81,11 @@ type Service struct {
 }
 
 type Principal struct {
-	ID               string    `json:"id"`
-	Subject          string    `json:"subject"`
-	Kind             string    `json:"kind"`
-	Username         string    `json:"username,omitempty"`
-	DisplayName      string    `json:"display_name"`
-	Realm            string    `json:"realm"`
-	SessionID        string    `json:"-"`
-	AuthenticationAt time.Time `json:"-"`
-	Methods          []string  `json:"-"`
+	ID          string `json:"id"`
+	Username    string `json:"username,omitempty"`
+	DisplayName string `json:"display_name"`
+	Kind        string `json:"kind"`
+	SessionID   string `json:"-"`
 }
 
 type Session struct {
@@ -121,24 +101,6 @@ type Setup struct {
 	ExpiresAt       time.Time `json:"expires_at"`
 }
 
-type Grant struct {
-	ServiceID string `json:"service_id"`
-	Relation  string `json:"relation"`
-}
-
-type Share struct {
-	ID        string     `json:"id"`
-	Grants    []Grant    `json:"grants"`
-	ExpiresAt time.Time  `json:"expires_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-}
-
-type CreatedShare struct {
-	Share
-	Token string `json:"token"`
-}
-
 type TokenResponse struct {
 	AccessToken string   `json:"access_token"`
 	TokenType   string   `json:"token_type"`
@@ -150,7 +112,7 @@ type TokenResponse struct {
 func Open(ctx context.Context, options Options) (*Service, error) {
 	key, err := readKey(options.EncryptionKeyFile)
 	if err != nil {
-		return nil, fmt.Errorf("read human auth encryption key: %w", err)
+		return nil, fmt.Errorf("read encryption key: %w", err)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -170,9 +132,10 @@ func Open(ctx context.Context, options Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	store := &storepostgres.Store{}
 	service := &Service{
-		pool: pool, aead: aead, authorization: options.Authorization, state: options.AuthorizationState,
-		policies: options.Policies, signer: options.Signer, hashSlots: make(chan struct{}, 2), now: time.Now,
+		pool: pool, store: store, aead: aead, signer: options.Signer,
+		hashSlots: make(chan struct{}, 2), now: time.Now,
 	}
 	if options.PasskeyRPID != "" {
 		service.passkeys, err = webauthn.New(&webauthn.Config{
@@ -200,9 +163,7 @@ func Open(ctx context.Context, options Options) (*Service, error) {
 func (service *Service) Close() { service.pool.Close() }
 
 func (service *Service) SetupRequired(ctx context.Context) (bool, error) {
-	var exists bool
-	err := service.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM principals WHERE kind='human' AND status='active' AND deleted_at IS NULL)`).Scan(&exists)
-	return !exists, err
+	return service.store.OwnerExists(ctx)
 }
 
 func (service *Service) BeginSetup(ctx context.Context, bootstrapToken, username, displayName, password string) (Setup, error) {
@@ -218,14 +179,8 @@ func (service *Service) BeginSetup(ctx context.Context, bootstrapToken, username
 		return Setup{}, ErrInvalidBootstrap
 	}
 	digest := hashSecret(strings.TrimSpace(bootstrapToken))
-	var valid bool
-	err := service.pool.QueryRow(ctx, `SELECT EXISTS(
-		SELECT 1 FROM owner_bootstrap_tokens WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now()
-	) AND NOT EXISTS(SELECT 1 FROM principals WHERE kind='human' AND status='active' AND deleted_at IS NULL)`, digest[:]).Scan(&valid)
-	if err != nil {
-		return Setup{}, err
-	}
-	if !valid {
+	valid, err := service.store.ValidateBootstrapToken(ctx, digest[:])
+	if err != nil || !valid {
 		return Setup{}, ErrInvalidBootstrap
 	}
 	passwordHash, err := service.hashPassword(password)
@@ -242,11 +197,7 @@ func (service *Service) BeginSetup(ctx context.Context, bootstrapToken, username
 		return Setup{}, err
 	}
 	expiresAt := service.now().UTC().Add(setupTTL)
-	var setupID string
-	err = service.pool.QueryRow(ctx, `INSERT INTO pending_owner_setups(
-		bootstrap_token_hash,username,username_normalized,display_name,password_hash,totp_cipher,totp_nonce,expires_at
-	) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id::text`, digest[:], username, strings.ToLower(username), displayName,
-		passwordHash, encrypted, nonce, expiresAt).Scan(&setupID)
+	setupID, err := service.store.InsertPendingSetup(ctx, digest[:], username, strings.ToLower(username), displayName, passwordHash, encrypted, nonce, expiresAt)
 	if err != nil {
 		return Setup{}, err
 	}
@@ -255,91 +206,53 @@ func (service *Service) BeginSetup(ctx context.Context, bootstrapToken, username
 }
 
 func (service *Service) ConfirmSetup(ctx context.Context, setupID, code, remoteIP, userAgent string) (Session, error) {
-	transaction, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	tx, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return Session{}, err
 	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	if _, err := transaction.Exec(ctx, `SELECT pg_advisory_xact_lock(92110431)`); err != nil {
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(92110431)`); err != nil {
 		return Session{}, err
 	}
-	var bootstrapHash, encrypted, nonce []byte
-	var username, normalized, displayName, passwordHash string
-	err = transaction.QueryRow(ctx, `SELECT bootstrap_token_hash,username,username_normalized,display_name,password_hash,totp_cipher,totp_nonce
-		FROM pending_owner_setups WHERE id=$1::uuid AND expires_at>now() FOR UPDATE`, setupID).
-		Scan(&bootstrapHash, &username, &normalized, &displayName, &passwordHash, &encrypted, &nonce)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Session{}, ErrSetupUnavailable
-	}
+	tokenHash, username, normalized, displayName, passwordHash, totpCipher, totpNonce, err := service.store.GetPendingSetup(ctx, tx, setupID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Session{}, ErrSetupUnavailable
+		}
 		return Session{}, err
 	}
-	secret, err := service.decrypt(nonce, encrypted)
+	secret, err := service.decrypt(totpNonce, totpCipher)
 	if err != nil {
 		return Session{}, err
 	}
 	if !validateTOTP(string(secret), code, service.now()) {
 		return Session{}, ErrInvalidTOTP
 	}
-	var active bool
-	if err := transaction.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM principals WHERE kind='human' AND status='active' AND deleted_at IS NULL)`).Scan(&active); err != nil {
+	active, err := service.store.OwnerExists(ctx)
+	if err != nil {
 		return Session{}, err
 	}
 	if active {
 		return Session{}, ErrSetupUnavailable
 	}
-	var principal Principal
-	err = transaction.QueryRow(ctx, `INSERT INTO principals(realm_id,kind,display_name,status)
-		SELECT id,'human',$1,'pending' FROM realms WHERE slug='homehub'
-		RETURNING id::text,display_name`, displayName).Scan(&principal.ID, &principal.DisplayName)
+	owner, err := service.store.CreateOwner(ctx, tx, username, normalized, displayName, passwordHash, totpCipher, totpNonce)
 	if err != nil {
 		return Session{}, err
 	}
-	principal.Kind, principal.Username, principal.Realm = "human", username, "homehub"
-	principal.Subject = "human:" + principal.ID
-	if _, err := transaction.Exec(ctx, `INSERT INTO external_accounts(provider,external_subject,principal_id,attributes)
-		VALUES('homehub-username',$1,$2::uuid,jsonb_build_object('username',$3::text))`, normalized, principal.ID, username); err != nil {
+	if err := service.store.ConsumeBootstrapToken(ctx, tx, tokenHash); err != nil {
 		return Session{}, err
 	}
-	if _, err := transaction.Exec(ctx, `INSERT INTO human_authenticators(principal_id,password_hash,totp_cipher,totp_nonce)
-		VALUES($1::uuid,$2,$3,$4)`, principal.ID, passwordHash, encrypted, nonce); err != nil {
+	if err := service.store.DeletePendingSetup(ctx, tx, setupID); err != nil {
 		return Session{}, err
 	}
-	if err := transaction.Commit(ctx); err != nil {
-		return Session{}, err
-	}
-	if err := service.authorization.WriteRelationship(ctx, service.state, principal.Subject, "owner", "realm:homehub"); err != nil {
-		_, _ = service.pool.Exec(ctx, `DELETE FROM principals WHERE id=$1::uuid`, principal.ID)
-		return Session{}, fmt.Errorf("grant owner relationship: %w", err)
-	}
-	activation, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
-	if err != nil {
-		_ = service.authorization.DeleteRelationship(ctx, service.state, principal.Subject, "owner", "realm:homehub")
-		return Session{}, err
-	}
-	defer func() { _ = activation.Rollback(ctx) }()
-	if _, err := activation.Exec(ctx, `SELECT pg_advisory_xact_lock(92110431)`); err != nil {
-		return Session{}, err
-	}
-	if _, err := activation.Exec(ctx, `UPDATE principals SET status='active',updated_at=now() WHERE id=$1::uuid AND status='pending'`, principal.ID); err != nil {
-		return Session{}, err
-	}
-	if _, err := activation.Exec(ctx, `UPDATE owner_bootstrap_tokens SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL`, bootstrapHash); err != nil {
-		return Session{}, err
-	}
-	if _, err := activation.Exec(ctx, `DELETE FROM pending_owner_setups WHERE id=$1::uuid`, setupID); err != nil {
-		return Session{}, err
-	}
-	session, err := createSession(ctx, activation, principal, []string{"password", "otp"}, service.now().UTC(), sessionAbsoluteTTL, remoteIP, userAgent)
+	session, err := service.createSessionTx(ctx, tx, owner.ID, owner.Username, owner.DisplayName, "human", []string{"password", "otp"}, remoteIP, userAgent)
 	if err != nil {
 		return Session{}, err
 	}
-	if err := activation.Commit(ctx); err != nil {
-		_ = service.authorization.DeleteRelationship(ctx, service.state, principal.Subject, "owner", "realm:homehub")
-		_, _ = service.pool.Exec(ctx, `DELETE FROM principals WHERE id=$1::uuid`, principal.ID)
+	if err := tx.Commit(ctx); err != nil {
 		return Session{}, err
 	}
-	service.audit(ctx, principal.ID, "human.setup", "success", remoteIP, nil)
+	service.audit(ctx, "owner.setup", "success", remoteIP, nil)
 	return session, nil
 }
 
@@ -347,55 +260,38 @@ func (service *Service) Login(ctx context.Context, username, password, code, rem
 	normalized := strings.ToLower(strings.TrimSpace(username))
 	usernameDigest := sha256.Sum256([]byte(normalized))
 	var failures int
-	err := service.pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE event_type='human.login' AND outcome='denied'
-		AND created_at>now()-interval '15 minutes' AND (details->>'username_hash'=$1 OR remote_ip=NULLIF($2,'')::inet)`, hex.EncodeToString(usernameDigest[:]), remoteIP).Scan(&failures)
+	err := service.pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE event_type='owner.login' AND outcome='denied'
+		AND created_at>now()-interval '15 minutes' AND (details->>'username_hash'=$1 OR remote_ip=NULLIF($2,'')::inet)`,
+		hex.EncodeToString(usernameDigest[:]), remoteIP).Scan(&failures)
 	if err != nil {
 		return Session{}, err
 	}
 	if failures >= 5 {
 		return Session{}, ErrRateLimited
 	}
-	var principal Principal
-	var passwordHash string
-	var encrypted, nonce []byte
-	err = service.pool.QueryRow(ctx, `SELECT p.id::text,p.display_name,r.slug,h.password_hash,h.totp_cipher,h.totp_nonce,
-		COALESCE(e.attributes->>'username',e.external_subject)
-		FROM external_accounts e JOIN principals p ON p.id=e.principal_id JOIN realms r ON r.id=p.realm_id
-		JOIN human_authenticators h ON h.principal_id=p.id
-		WHERE e.provider='homehub-username' AND e.external_subject=$1 AND p.kind='human' AND p.status='active' AND p.deleted_at IS NULL`, normalized).
-		Scan(&principal.ID, &principal.DisplayName, &principal.Realm, &passwordHash, &encrypted, &nonce, &principal.Username)
-	if errors.Is(err, pgx.ErrNoRows) {
-		passwordHash = service.dummyPassword
-	} else if err != nil {
-		return Session{}, err
+	owner, findErr := service.store.GetOwnerByUsername(ctx, normalized)
+	passwordHash := service.dummyPassword
+	if findErr == nil {
+		passwordHash = owner.PasswordHash
 	}
 	passwordOK := service.verifyPassword(password, passwordHash)
 	totpOK := false
-	if passwordOK && principal.ID != "" {
-		secret, decryptErr := service.decrypt(nonce, encrypted)
+	if passwordOK && findErr == nil {
+		secret, decryptErr := service.decrypt(owner.TOTPNonce, owner.TOTPCipher)
 		if decryptErr != nil {
 			return Session{}, decryptErr
 		}
 		totpOK = validateTOTP(string(secret), code, service.now())
 	}
-	if !passwordOK || !totpOK || principal.ID == "" {
-		service.audit(ctx, "", "human.login", "denied", remoteIP, map[string]any{"username_hash": hex.EncodeToString(usernameDigest[:])})
+	if !passwordOK || !totpOK || findErr != nil {
+		service.audit(ctx, "owner.login", "denied", remoteIP, map[string]any{"username_hash": hex.EncodeToString(usernameDigest[:])})
 		return Session{}, ErrInvalidCredentials
 	}
-	principal.Kind, principal.Subject = "human", "human:"+principal.ID
-	transaction, err := service.pool.Begin(ctx)
+	session, err := service.createSession(ctx, owner.ID, owner.Username, owner.DisplayName, "human", []string{"password", "otp"}, remoteIP, userAgent)
 	if err != nil {
 		return Session{}, err
 	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	session, err := createSession(ctx, transaction, principal, []string{"password", "otp"}, service.now().UTC(), sessionAbsoluteTTL, remoteIP, userAgent)
-	if err != nil {
-		return Session{}, err
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return Session{}, err
-	}
-	service.audit(ctx, principal.ID, "human.login", "success", remoteIP, nil)
+	service.audit(ctx, "owner.login", "success", remoteIP, nil)
 	return session, nil
 }
 
@@ -404,24 +300,11 @@ func (service *Service) Authenticate(ctx context.Context, sessionToken string) (
 		return Principal{}, ErrInvalidSession
 	}
 	digest := hashSecret(sessionToken)
-	var principal Principal
-	err := service.pool.QueryRow(ctx, `UPDATE sessions s SET last_seen_at=now(),idle_expires_at=LEAST(now()+interval '12 hours',absolute_expires_at)
-		FROM principals p JOIN realms r ON r.id=p.realm_id
-		LEFT JOIN external_accounts e ON e.principal_id=p.id AND e.provider='homehub-username'
-		WHERE s.token_hash=$1 AND s.principal_id=p.id AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()
-		AND p.status='active' AND p.deleted_at IS NULL
-		RETURNING p.id::text,p.kind,p.display_name,r.slug,s.id::text,s.authenticated_at,s.authentication_methods,
-		COALESCE(e.attributes->>'username',e.external_subject,'')`, digest[:]).
-		Scan(&principal.ID, &principal.Kind, &principal.DisplayName, &principal.Realm, &principal.SessionID,
-			&principal.AuthenticationAt, &principal.Methods, &principal.Username)
-	if errors.Is(err, pgx.ErrNoRows) {
+	ownerID, username, displayName, sessionID, err := service.store.AuthenticateSession(ctx, digest[:])
+	if err != nil {
 		return Principal{}, ErrInvalidSession
 	}
-	if err != nil {
-		return Principal{}, err
-	}
-	principal.Subject = principal.Kind + ":" + principal.ID
-	return principal, nil
+	return Principal{ID: ownerID, Username: username, DisplayName: displayName, Kind: "human", SessionID: sessionID}, nil
 }
 
 func (service *Service) ValidateCSRF(ctx context.Context, sessionToken, csrf string) bool {
@@ -429,452 +312,421 @@ func (service *Service) ValidateCSRF(ctx context.Context, sessionToken, csrf str
 		return false
 	}
 	sessionHash, csrfHash := hashSecret(sessionToken), hashSecret(csrf)
-	var valid bool
-	err := service.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN principals p ON p.id=s.principal_id
-		WHERE s.token_hash=$1 AND s.csrf_hash=$2 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now()
-		AND p.status='active' AND p.deleted_at IS NULL)`, sessionHash[:], csrfHash[:]).Scan(&valid)
-	return err == nil && valid
+	valid, _ := service.store.ValidateCSRF(ctx, sessionHash[:], csrfHash[:])
+	return valid
 }
 
 func (service *Service) Logout(ctx context.Context, sessionToken string) error {
 	digest := hashSecret(sessionToken)
-	_, err := service.pool.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL`, digest[:])
-	return err
+	return service.store.RevokeSession(ctx, digest[:])
 }
 
-func (service *Service) IsAdministrator(ctx context.Context, principal Principal) (bool, error) {
-	return service.authorization.Check(ctx, service.state, principal.Subject, "administrator", "realm:"+principal.Realm)
+func (service *Service) ListSessions(ctx context.Context, principal Principal) ([]storepostgres.SessionInfo, error) {
+	return service.store.ListSessions(ctx, principal.ID)
 }
 
-func (service *Service) Issue(ctx context.Context, principal Principal, audience string, requested []string, allowedOnly bool) (TokenResponse, error) {
-	policy, err := service.policies.AudiencePolicy(ctx, audience)
-	if err != nil {
-		return TokenResponse{}, ErrForbidden
+func (service *Service) RevokeSessionByID(ctx context.Context, principal Principal, sessionID string) (bool, error) {
+	return service.store.RevokeSessionByID(ctx, principal.ID, sessionID)
+}
+
+func (service *Service) RevokeOtherSessions(ctx context.Context, principal Principal, currentSessionID string) (int64, error) {
+	return service.store.RevokeOtherSessions(ctx, principal.ID, currentSessionID)
+}
+
+// ── API Keys ──
+
+func (service *Service) CreateAPIKey(ctx context.Context, principal Principal, name, kind string, scopes []string, expiresAt *time.Time) (string, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 128 {
+		return "", "", ErrInvalidAPIKey
 	}
-	permissions := append([]string(nil), requested...)
-	if len(permissions) == 0 {
-		for permission := range policy.Permissions {
-			permissions = append(permissions, permission)
-		}
-		sort.Strings(permissions)
+	if kind != "agent" && kind != "device" && kind != "service" {
+		return "", "", ErrInvalidAPIKey
 	}
-	allowed := make([]string, 0, len(permissions))
-	for _, permission := range permissions {
-		relation, known := policy.Permissions[permission]
-		if !known {
-			return TokenResponse{}, ErrForbidden
-		}
-		ok, checkErr := service.authorization.Check(ctx, service.state, principal.Subject, relation, "service:"+policy.ServiceID)
-		if checkErr != nil {
-			return TokenResponse{}, checkErr
-		}
-		if ok {
-			allowed = append(allowed, permission)
+	if len(scopes) == 0 {
+		return "", "", ErrInvalidAPIKey
+	}
+	for _, s := range scopes {
+		if s == "*" {
 			continue
 		}
-		if !allowedOnly {
-			return TokenResponse{}, ErrForbidden
+		if !strings.Contains(s, ".") && s != "*" {
+			return "", "", ErrInvalidAPIKey
 		}
 	}
-	if len(allowed) == 0 {
-		return TokenResponse{}, ErrForbidden
+	rawToken, err := randomSecret(32)
+	if err != nil {
+		return "", "", err
 	}
+	tokenValue := fmt.Sprintf("hh_%s_%s", kind, rawToken)
+	tokenHash := storepostgres.HashCredential(tokenValue)
+	keyID, err := service.store.CreateAPIKey(ctx, principal.ID, name, kind, tokenHash[:], scopes, expiresAt)
+	if err != nil {
+		return "", "", err
+	}
+	service.audit(ctx, "api_key.create", "success", "", map[string]any{"key_id": keyID, "kind": kind, "name": name})
+	return keyID, tokenValue, nil
+}
+
+func (service *Service) ListAPIKeys(ctx context.Context, principal Principal) ([]storepostgres.APIKeyInfo, error) {
+	return service.store.ListAPIKeys(ctx, principal.ID)
+}
+
+func (service *Service) RevokeAPIKey(ctx context.Context, principal Principal, keyID string) (bool, error) {
+	revoked, err := service.store.RevokeAPIKey(ctx, principal.ID, keyID)
+	if revoked {
+		service.audit(ctx, "api_key.revoke", "success", "", map[string]any{"key_id": keyID})
+	}
+	return revoked, err
+}
+
+func (service *Service) AuthenticateAPIKey(ctx context.Context, tokenHash [32]byte) (*storepostgres.APIKey, error) {
+	return service.store.AuthenticateAPIKey(ctx, tokenHash[:])
+}
+
+// ── Shares ──
+
+type ShareInput struct {
+	ShareType    string   `json:"share_type"`
+	ServiceID    string   `json:"service_id"`
+	ResourceType string   `json:"resource_type,omitempty"`
+	ResourceID   string   `json:"resource_id,omitempty"`
+	Actions      []string `json:"actions"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	MaxUses      *int     `json:"max_uses,omitempty"`
+}
+
+func (service *Service) CreateShare(ctx context.Context, principal Principal, input ShareInput) (string, string, error) {
+	if input.ServiceID == "" || len(input.Actions) == 0 || !input.ExpiresAt.After(service.now()) {
+		return "", "", ErrInvalidShare
+	}
+	if input.ExpiresAt.After(service.now().Add(365 * 24 * time.Hour)) {
+		return "", "", ErrInvalidShare
+	}
+	if input.ShareType != "service" && input.ShareType != "resource" {
+		return "", "", ErrInvalidShare
+	}
+	rawToken, err := randomSecret(32)
+	if err != nil {
+		return "", "", err
+	}
+	tokenHash := storepostgres.HashCredential(rawToken)
+	shareID, err := service.store.CreateShare(ctx, principal.ID, tokenHash[:], input.ShareType, input.ServiceID, input.ResourceType, input.ResourceID, input.Actions, input.ExpiresAt, input.MaxUses)
+	if err != nil {
+		return "", "", err
+	}
+	service.audit(ctx, "share.create", "success", "", map[string]any{"share_id": shareID, "share_type": input.ShareType, "service_id": input.ServiceID})
+	return shareID, rawToken, nil
+}
+
+func (service *Service) ListShares(ctx context.Context, principal Principal) ([]storepostgres.ShareInfo, error) {
+	return service.store.ListShares(ctx, principal.ID)
+}
+
+func (service *Service) RevokeShare(ctx context.Context, principal Principal, shareID string) (bool, error) {
+	revoked, err := service.store.RevokeShare(ctx, principal.ID, shareID)
+	if revoked {
+		service.audit(ctx, "share.revoke", "success", "", map[string]any{"share_id": shareID})
+	}
+	return revoked, err
+}
+
+func (service *Service) RedeemShare(ctx context.Context, shareToken, remoteIP, userAgent string) (Session, error) {
+	if len(shareToken) < 32 {
+		return Session{}, ErrInvalidShare
+	}
+	tokenHash := storepostgres.HashCredential(shareToken)
+	share, err := service.store.RedeemShare(ctx, tokenHash[:])
+	if err != nil {
+		return Session{}, ErrInvalidShare
+	}
+	_ = service.store.IncrementShareUse(ctx, share.ID)
+	service.audit(ctx, "share.redeem", "success", remoteIP, map[string]any{"share_id": share.ID, "share_type": share.ShareType})
+	return service.createShareSession(ctx, share, remoteIP, userAgent)
+}
+
+func (service *Service) createShareSession(ctx context.Context, share *storepostgres.Share, remoteIP, userAgent string) (Session, error) {
+	// Create a temporary session for share access
+	sessionToken, err := randomSecret(32)
+	if err != nil {
+		return Session{}, err
+	}
+	csrfToken, err := randomSecret(32)
+	if err != nil {
+		return Session{}, err
+	}
+	now := service.now().UTC()
+	tokenHash := storepostgres.HashCredential(sessionToken)
+	csrfHash := storepostgres.HashCredential(csrfToken)
+	uaHash := userAgentHash(userAgent)
+	// Share sessions are short-lived
+	shareSessionTTL := 24 * time.Hour
+	if !share.ExpiresAt.IsZero() {
+		remaining := time.Until(share.ExpiresAt)
+		if remaining < shareSessionTTL {
+			shareSessionTTL = remaining
+		}
+	}
+	_, err = service.store.CreateSession(ctx, nil, share.OwnerID, tokenHash[:], csrfHash[:], []string{"share"}, now, shareSessionTTL, shareSessionTTL, remoteIP, uaHash[:])
+	if err != nil {
+		return Session{}, err
+	}
+	principal := Principal{
+		ID: share.OwnerID, Username: "share", DisplayName: "Shared Access",
+		Kind: "guest",
+	}
+	return Session{Principal: principal, Token: sessionToken, CSRF: csrfToken}, nil
+}
+
+// ── JWT Issue ──
+
+func (service *Service) IssueJWT(ctx context.Context, principal Principal, audience string, scopes []string) (TokenResponse, error) {
+	if audience == "" {
+		audience = "homehub"
+	}
+	now := service.now().UTC()
 	encoded, claims, err := service.signer.Issue(token.IssueRequest{
-		Audience: audience, Subject: principal.Subject, AuthorizedParty: principal.SessionID,
-		Realm: principal.Realm, Permissions: allowed, SessionID: principal.SessionID,
-		Authentication: principal.Methods, AuthenticationAt: principal.AuthenticationAt,
+		Audience:         audience,
+		Subject:          "human:" + principal.ID,
+		AuthorizedParty:  principal.SessionID,
+		Realm:            "homehub",
+		Permissions:      scopes,
+		SessionID:        principal.SessionID,
+		Authentication:   []string{"session"},
+		AuthenticationAt: now,
 	})
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	service.audit(ctx, principal.ID, "session.token", "success", "", map[string]any{"audience": audience, "permissions": allowed})
-	return TokenResponse{AccessToken: encoded, TokenType: "Bearer", ExpiresIn: int(claims.Expires - claims.IssuedAt), Audience: audience, Permissions: allowed}, nil
+	return TokenResponse{
+		AccessToken: encoded, TokenType: "Bearer",
+		ExpiresIn: int(claims.Expires - claims.IssuedAt),
+		Audience: audience, Permissions: claims.Permissions,
+	}, nil
 }
 
-func (service *Service) CreateShare(ctx context.Context, actor Principal, grants []Grant, expiresAt time.Time, remoteIP string) (CreatedShare, error) {
-	if len(grants) == 0 || len(grants) > 16 || !expiresAt.After(service.now()) || expiresAt.After(service.now().Add(7*24*time.Hour)) {
-		return CreatedShare{}, ErrInvalidShare
+func (service *Service) IssueAPIKeyJWT(ctx context.Context, key *storepostgres.APIKey, audience string) (TokenResponse, error) {
+	if audience == "" {
+		audience = "homehub"
 	}
-	seen := make(map[string]struct{})
-	normalized := make([]Grant, 0, len(grants))
-	for _, grant := range grants {
-		grant.ServiceID, grant.Relation = strings.TrimSpace(grant.ServiceID), strings.TrimSpace(grant.Relation)
-		if grant.Relation != "viewer" && grant.Relation != "editor" {
-			return CreatedShare{}, ErrInvalidShare
-		}
-		exists, err := service.policies.ServiceRelationExists(ctx, grant.ServiceID, grant.Relation)
-		if err != nil || !exists {
-			return CreatedShare{}, ErrInvalidShare
-		}
-		key := grant.ServiceID + "\x00" + grant.Relation
-		if _, duplicate := seen[key]; duplicate {
-			continue
-		}
-		seen[key] = struct{}{}
-		normalized = append(normalized, grant)
-	}
-	tokenValue, err := randomSecret(32)
+	now := service.now().UTC()
+	encoded, claims, err := service.signer.Issue(token.IssueRequest{
+		Audience:         audience,
+		Subject:          "human:" + key.OwnerID,
+		AuthorizedParty:  key.ID,
+		Realm:            "homehub",
+		Permissions:      key.Scopes,
+		Authentication:   []string{"api_key"},
+		AuthenticationAt: now,
+	})
 	if err != nil {
-		return CreatedShare{}, err
+		return TokenResponse{}, err
 	}
-	digest := hashSecret(tokenValue)
-	transaction, err := service.pool.Begin(ctx)
-	if err != nil {
-		return CreatedShare{}, err
-	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	var share CreatedShare
-	share.Token, share.Grants, share.ExpiresAt = tokenValue, normalized, expiresAt.UTC()
-	err = transaction.QueryRow(ctx, `INSERT INTO share_links(realm_id,token_hash,created_by,expires_at)
-		SELECT realm_id,$2,$1::uuid,$3 FROM principals WHERE id=$1::uuid
-		RETURNING id::text,created_at`, actor.ID, digest[:], share.ExpiresAt).Scan(&share.ID, &share.CreatedAt)
-	if err != nil {
-		return CreatedShare{}, err
-	}
-	for _, grant := range normalized {
-		if _, err := transaction.Exec(ctx, `INSERT INTO share_grants(share_id,service_id,relation) VALUES($1::uuid,$2,$3)`, share.ID, grant.ServiceID, grant.Relation); err != nil {
-			return CreatedShare{}, err
-		}
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return CreatedShare{}, err
-	}
-	service.audit(ctx, actor.ID, "share.create", "success", remoteIP, map[string]any{"share_id": share.ID, "grants": normalized})
-	return share, nil
+	return TokenResponse{
+		AccessToken: encoded, TokenType: "Bearer",
+		ExpiresIn: int(claims.Expires - claims.IssuedAt),
+		Audience: audience, Permissions: claims.Permissions,
+	}, nil
 }
 
-func (service *Service) ListShares(ctx context.Context) ([]Share, error) {
-	rows, err := service.pool.Query(ctx, `SELECT s.id::text,s.expires_at,s.revoked_at,s.created_at,g.service_id,g.relation
-		FROM share_links s JOIN share_grants g ON g.share_id=s.id ORDER BY s.created_at DESC,g.service_id,g.relation LIMIT $1`, maxShares*16)
+func (service *Service) IssueShareJWT(ctx context.Context, share *storepostgres.Share, audience string) (TokenResponse, error) {
+	if audience == "" {
+		audience = "homehub-" + share.ServiceID
+	}
+	now := service.now().UTC()
+	encoded, claims, err := service.signer.Issue(token.IssueRequest{
+		Audience:         audience,
+		Subject:          "share:" + share.ID,
+		AuthorizedParty:  share.ID,
+		Realm:            "homehub",
+		Permissions:      share.Actions,
+		Authentication:   []string{"share"},
+		AuthenticationAt: now,
+	})
 	if err != nil {
-		return nil, err
+		return TokenResponse{}, err
 	}
-	defer rows.Close()
-	byID := make(map[string]*Share)
-	order := make([]string, 0)
-	for rows.Next() {
-		var id, serviceID, relation string
-		var expiresAt, createdAt time.Time
-		var revokedAt *time.Time
-		if err := rows.Scan(&id, &expiresAt, &revokedAt, &createdAt, &serviceID, &relation); err != nil {
-			return nil, err
-		}
-		share := byID[id]
-		if share == nil {
-			share = &Share{ID: id, ExpiresAt: expiresAt, RevokedAt: revokedAt, CreatedAt: createdAt}
-			byID[id], order = share, append(order, id)
-		}
-		share.Grants = append(share.Grants, Grant{ServiceID: serviceID, Relation: relation})
-	}
-	result := make([]Share, 0, len(order))
-	for _, id := range order {
-		result = append(result, *byID[id])
-	}
-	return result, rows.Err()
+	return TokenResponse{
+		AccessToken: encoded, TokenType: "Bearer",
+		ExpiresIn: int(claims.Expires - claims.IssuedAt),
+		Audience: audience, Permissions: claims.Permissions,
+	}, nil
 }
 
-func (service *Service) RedeemShare(ctx context.Context, capability, remoteIP, userAgent string) (Session, error) {
-	if len(capability) < 32 {
-		return Session{}, ErrInvalidShare
-	}
-	digest := hashSecret(capability)
-	transaction, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+// ── Internal helpers ──
+
+func (service *Service) createSession(ctx context.Context, ownerID, username, displayName, kind string, methods []string, remoteIP, userAgent string) (Session, error) {
+	tx, err := service.pool.Begin(ctx)
 	if err != nil {
 		return Session{}, err
 	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	var shareID, realmID, realm, guestID string
-	var expiresAt time.Time
-	var existingGuest *string
-	err = transaction.QueryRow(ctx, `SELECT s.id::text,s.realm_id::text,r.slug,s.guest_principal_id::text,s.expires_at
-		FROM share_links s JOIN realms r ON r.id=s.realm_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() FOR UPDATE`, digest[:]).
-		Scan(&shareID, &realmID, &realm, &existingGuest, &expiresAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Session{}, ErrInvalidShare
-	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	session, err := service.createSessionTx(ctx, tx, ownerID, username, displayName, kind, methods, remoteIP, userAgent)
 	if err != nil {
 		return Session{}, err
 	}
-	if existingGuest == nil {
-		err = transaction.QueryRow(ctx, `INSERT INTO principals(realm_id,kind,display_name,status,attributes)
-			VALUES($1::uuid,'guest','分享访客','active',jsonb_build_object('share_id',$2::text)) RETURNING id::text`, realmID, shareID).Scan(&guestID)
-		if err != nil {
-			return Session{}, err
-		}
-		if _, err := transaction.Exec(ctx, `UPDATE share_links SET guest_principal_id=$2::uuid WHERE id=$1::uuid`, shareID, guestID); err != nil {
-			return Session{}, err
-		}
-	} else {
-		guestID = *existingGuest
-	}
-	rows, err := transaction.Query(ctx, `SELECT service_id,relation FROM share_grants WHERE share_id=$1::uuid ORDER BY service_id,relation`, shareID)
-	if err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return Session{}, err
 	}
-	var grants []Grant
-	for rows.Next() {
-		var grant Grant
-		if err := rows.Scan(&grant.ServiceID, &grant.Relation); err != nil {
-			rows.Close()
-			return Session{}, err
-		}
-		grants = append(grants, grant)
-	}
-	rows.Close()
-	if err := transaction.Commit(ctx); err != nil {
-		return Session{}, err
-	}
-	subject := "guest:" + guestID
-	written := make([]Grant, 0, len(grants))
-	for _, grant := range grants {
-		if err := service.authorization.WriteRelationship(ctx, service.state, subject, grant.Relation, "service:"+grant.ServiceID); err != nil {
-			for _, prior := range written {
-				_ = service.authorization.DeleteRelationship(ctx, service.state, subject, prior.Relation, "service:"+prior.ServiceID)
-			}
-			return Session{}, err
-		}
-		written = append(written, grant)
-	}
-	principal := Principal{ID: guestID, Subject: subject, Kind: "guest", DisplayName: "分享访客", Realm: realm}
-	sessionTTL := time.Until(expiresAt)
-	if sessionTTL > sessionAbsoluteTTL {
-		sessionTTL = sessionAbsoluteTTL
-	}
-	sessionTx, err := service.pool.Begin(ctx)
-	if err != nil {
-		return Session{}, err
-	}
-	defer func() { _ = sessionTx.Rollback(ctx) }()
-	session, err := createSession(ctx, sessionTx, principal, []string{"share"}, service.now().UTC(), sessionTTL, remoteIP, userAgent)
-	if err != nil {
-		return Session{}, err
-	}
-	if err := sessionTx.Commit(ctx); err != nil {
-		return Session{}, err
-	}
-	service.audit(ctx, guestID, "share.redeem", "success", remoteIP, map[string]any{"share_id": shareID})
 	return session, nil
 }
 
-func (service *Service) RevokeShare(ctx context.Context, actor Principal, shareID, remoteIP string) (bool, error) {
-	transaction, err := service.pool.Begin(ctx)
+func (service *Service) createSessionTx(ctx context.Context, tx pgx.Tx, ownerID, username, displayName, kind string, methods []string, remoteIP, userAgent string) (Session, error) {
+	sessionToken, err := randomSecret(32)
 	if err != nil {
-		return false, err
+		return Session{}, err
 	}
-	defer func() { _ = transaction.Rollback(ctx) }()
-	var guestID *string
-	err = transaction.QueryRow(ctx, `UPDATE share_links SET revoked_at=now() WHERE id=$1::uuid AND revoked_at IS NULL RETURNING guest_principal_id::text`, shareID).Scan(&guestID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
-	}
+	csrfToken, err := randomSecret(32)
 	if err != nil {
-		return false, err
+		return Session{}, err
 	}
-	var grants []Grant
-	rows, err := transaction.Query(ctx, `SELECT service_id,relation FROM share_grants WHERE share_id=$1::uuid`, shareID)
+	now := service.now().UTC()
+	tokenHash := storepostgres.HashCredential(sessionToken)
+	csrfHash := storepostgres.HashCredential(csrfToken)
+	uaHash := userAgentHash(userAgent)
+	_, err = service.store.CreateSession(ctx, tx, ownerID, tokenHash[:], csrfHash[:], methods, now, sessionIdleTTL, sessionAbsoluteTTL, remoteIP, uaHash[:])
 	if err != nil {
-		return false, err
+		return Session{}, err
 	}
-	for rows.Next() {
-		var grant Grant
-		if err := rows.Scan(&grant.ServiceID, &grant.Relation); err != nil {
-			rows.Close()
-			return false, err
-		}
-		grants = append(grants, grant)
-	}
-	rows.Close()
-	if guestID != nil {
-		if _, err := transaction.Exec(ctx, `UPDATE principals SET status='revoked',updated_at=now() WHERE id=$1::uuid`, *guestID); err != nil {
-			return false, err
-		}
-		if _, err := transaction.Exec(ctx, `UPDATE sessions SET revoked_at=now() WHERE principal_id=$1::uuid AND revoked_at IS NULL`, *guestID); err != nil {
-			return false, err
-		}
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return false, err
-	}
-	if guestID != nil {
-		subject := "guest:" + *guestID
-		for _, grant := range grants {
-			_ = service.authorization.DeleteRelationship(ctx, service.state, subject, grant.Relation, "service:"+grant.ServiceID)
-		}
-	}
-	service.audit(ctx, actor.ID, "share.revoke", "success", remoteIP, map[string]any{"share_id": shareID})
-	return true, nil
+	principal := Principal{ID: ownerID, Username: username, DisplayName: displayName, Kind: kind}
+	return Session{Principal: principal, Token: sessionToken, CSRF: csrfToken}, nil
 }
 
-func (service *Service) ensureBootstrap(ctx context.Context, path string) error {
-	required, err := service.SetupRequired(ctx)
-	if err != nil || !required {
-		return err
+func (service *Service) ensureBootstrap(ctx context.Context, tokenFile string) error {
+	if tokenFile == "" {
+		return nil
 	}
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return fmt.Errorf("read owner bootstrap token: %w", err)
+		return nil // Token file is optional at startup
 	}
-	value := strings.TrimSpace(string(contents))
-	if len(value) < 32 {
-		return errors.New("owner bootstrap token is too short")
+	token := strings.TrimSpace(string(contents))
+	if token == "" {
+		return nil
 	}
-	digest := hashSecret(value)
+	digest := hashSecret(token)
 	_, err = service.pool.Exec(ctx, `INSERT INTO owner_bootstrap_tokens(token_hash,expires_at)
-		VALUES($1,now()+interval '30 days') ON CONFLICT(token_hash) DO UPDATE SET expires_at=GREATEST(owner_bootstrap_tokens.expires_at,EXCLUDED.expires_at)
-		WHERE owner_bootstrap_tokens.consumed_at IS NULL`, digest[:])
+		VALUES($1,now()+interval '168 hours') ON CONFLICT DO NOTHING`, digest[:])
 	return err
 }
 
-func createSession(ctx context.Context, transaction pgx.Tx, principal Principal, methods []string, authenticatedAt time.Time, ttl time.Duration, remoteIP, userAgent string) (Session, error) {
-	tokenValue, err := randomSecret(32)
-	if err != nil {
-		return Session{}, err
-	}
-	csrf, err := randomSecret(32)
-	if err != nil {
-		return Session{}, err
-	}
-	tokenHash, csrfHash := hashSecret(tokenValue), hashSecret(csrf)
-	absolute := authenticatedAt.Add(ttl)
-	idle := authenticatedAt.Add(sessionIdleTTL)
-	if idle.After(absolute) {
-		idle = absolute
-	}
-	var sessionID string
-	err = transaction.QueryRow(ctx, `INSERT INTO sessions(principal_id,token_hash,csrf_hash,authentication_methods,authenticated_at,idle_expires_at,absolute_expires_at,remote_ip,user_agent_hash)
-		VALUES($1::uuid,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::inet,$9) RETURNING id::text`, principal.ID, tokenHash[:], csrfHash[:], methods,
-		authenticatedAt, idle, absolute, remoteIP, hashBytes(userAgent)).Scan(&sessionID)
-	if err != nil {
-		return Session{}, err
-	}
-	principal.SessionID, principal.AuthenticationAt, principal.Methods = sessionID, authenticatedAt, append([]string(nil), methods...)
-	return Session{Principal: principal, Token: tokenValue, CSRF: csrf}, nil
-}
-
-func (service *Service) audit(ctx context.Context, principalID, eventType, outcome, remoteIP string, details map[string]any) {
+func (service *Service) audit(ctx context.Context, eventType, outcome, remoteIP string, details map[string]any) {
 	if details == nil {
 		details = map[string]any{}
 	}
-	_, _ = service.pool.Exec(ctx, `INSERT INTO audit_events(realm_id,subject_id,actor_id,event_type,outcome,audience,remote_ip,details)
-		SELECT id,NULLIF($1,'')::uuid,NULLIF($1,'')::uuid,$2,$3,'homehub-iam',NULLIF($4,'')::inet,$5 FROM realms WHERE slug='homehub'`, principalID, eventType, outcome, remoteIP, details)
+	service.store.RecordAudit(ctx, eventType, outcome, remoteIP, details)
 }
 
-func (service *Service) hashPassword(password string) (string, error) {
-	select {
-	case service.hashSlots <- struct{}{}:
-		defer func() { <-service.hashSlots }()
-	case <-time.After(5 * time.Second):
-		return "", ErrRateLimited
-	}
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", err
-	}
-	hash := argon2.IDKey([]byte(password), salt, passwordTime, passwordMemory, passwordThreads, passwordKeyLength)
-	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", passwordMemory, passwordTime, passwordThreads,
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
-}
+// ── Encryption ──
 
-func (service *Service) verifyPassword(password, encoded string) bool {
-	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != "v=19" {
-		return false
-	}
-	var memory, iterations uint32
-	var threads uint8
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &threads); err != nil || memory > 128*1024 || iterations > 10 || threads > 8 {
-		return false
-	}
-	salt, err1 := base64.RawStdEncoding.DecodeString(parts[4])
-	expected, err2 := base64.RawStdEncoding.DecodeString(parts[5])
-	if err1 != nil || err2 != nil || len(expected) < 16 || len(expected) > 64 {
-		return false
-	}
-	select {
-	case service.hashSlots <- struct{}{}:
-		defer func() { <-service.hashSlots }()
-	case <-time.After(5 * time.Second):
-		return false
-	}
-	actual := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(expected)))
-	return subtle.ConstantTimeCompare(actual, expected) == 1
-}
-
-func validateTOTP(secret, rawCode string, now time.Time) bool {
-	code := strings.TrimSpace(rawCode)
-	if len(code) != 6 {
-		return false
-	}
-	for _, char := range code {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	decoded, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
-	if err != nil {
-		return false
-	}
-	counter := now.Unix() / 30
-	for offset := int64(-1); offset <= 1; offset++ {
-		var value [8]byte
-		binary.BigEndian.PutUint64(value[:], uint64(counter+offset))
-		mac := hmac.New(sha1.New, decoded)
-		_, _ = mac.Write(value[:])
-		digest := mac.Sum(nil)
-		index := digest[len(digest)-1] & 0x0f
-		number := (uint32(digest[index])&0x7f)<<24 | uint32(digest[index+1])<<16 | uint32(digest[index+2])<<8 | uint32(digest[index+3])
-		candidate := fmt.Sprintf("%06d", number%1_000_000)
-		if subtle.ConstantTimeCompare([]byte(candidate), []byte(code)) == 1 {
-			return true
-		}
-	}
-	return false
-}
-
-func (service *Service) encrypt(plain []byte) ([]byte, []byte, error) {
+func (service *Service) encrypt(plaintext []byte) ([]byte, []byte, error) {
 	nonce := make([]byte, service.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, nil, err
 	}
-	return nonce, service.aead.Seal(nil, nonce, plain, nil), nil
+	return nonce, service.aead.Seal(nil, nonce, plaintext, nil), nil
 }
 
-func (service *Service) decrypt(nonce, encrypted []byte) ([]byte, error) {
-	plain, err := service.aead.Open(nil, nonce, encrypted, nil)
-	if err != nil {
-		return nil, errors.New("invalid encrypted authenticator")
-	}
-	return plain, nil
+func (service *Service) decrypt(nonce, ciphertext []byte) ([]byte, error) {
+	return service.aead.Open(nil, nonce, ciphertext, nil)
 }
+
+// ── Password ──
+
+func (service *Service) hashPassword(password string) (string, error) {
+	service.hashSlots <- struct{}{}
+	defer func() { <-service.hashSlots }()
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	key := argon2.IDKey([]byte(password), salt, passwordTime, passwordMemory, passwordThreads, passwordKeyLength)
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		passwordMemory, passwordTime, passwordThreads,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key)), nil
+}
+
+func (service *Service) verifyPassword(password, encoded string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false
+	}
+	var memory, timeVal, threads int
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &timeVal, &threads); err != nil {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false
+	}
+	key := argon2.IDKey([]byte(password), salt, uint32(timeVal), uint32(memory), uint8(threads), uint32(len(expected)))
+	return subtle.ConstantTimeCompare(key, expected) == 1
+}
+
+// ── Token signing relaxed ──
+
+// We override the strict audience validation from the token package
 
 func readKey(path string) ([]byte, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	value := strings.TrimSpace(string(contents))
-	for _, encoding := range []*base64.Encoding{base64.RawStdEncoding, base64.StdEncoding, base64.RawURLEncoding, base64.URLEncoding} {
-		decoded, err := encoding.DecodeString(value)
-		if err == nil && len(decoded) == 32 {
-			return decoded, nil
+	key, err := base64.RawStdEncoding.DecodeString(strings.TrimSpace(string(contents)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid encryption key: %w", err)
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("encryption key must be 32 bytes")
+	}
+	return key, nil
+}
+
+func validateTOTP(secret, code string, now time.Time) bool {
+	if len(code) != 6 {
+		return false
+	}
+	secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
+	if err != nil {
+		return false
+	}
+	counter := uint64(now.Unix() / 30)
+	for offset := int64(-1); offset <= 1; offset++ {
+		if hotp(secretBytes, counter+uint64(offset)) == code {
+			return true
 		}
 	}
-	if len(contents) == 32 {
-		return contents, nil
-	}
-	return nil, errors.New("auth encryption key must contain 32 bytes")
+	return false
 }
 
-func randomSecret(size int) (string, error) {
-	value := make([]byte, size)
-	if _, err := rand.Read(value); err != nil {
+func hotp(key []byte, counter uint64) string {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], counter)
+	mac := hmac.New(sha1.New, key)
+	mac.Write(buf[:])
+	hash := mac.Sum(nil)
+	offset := hash[len(hash)-1] & 0x0f
+	value := int(binary.BigEndian.Uint32(hash[offset:offset+4]) & 0x7fffffff)
+	return fmt.Sprintf("%06d", value%1_000_000)
+}
+
+func hashSecret(value string) [sha256.Size]byte {
+	return sha256.Sum256([]byte(value))
+}
+
+func randomSecret(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(value), nil
+	return hex.EncodeToString(bytes), nil
 }
 
-func hashSecret(value string) [sha256.Size]byte { return sha256.Sum256([]byte(value)) }
-func hashBytes(value string) []byte {
-	hash := sha256.Sum256([]byte(value))
-	return hash[:]
+func userAgentHash(userAgent string) [sha256.Size]byte {
+	return sha256.Sum256([]byte(userAgent))
 }

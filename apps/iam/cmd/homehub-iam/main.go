@@ -11,15 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"gitee.com/zlx23/homehub/apps/iam/authz"
-	"gitee.com/zlx23/homehub/apps/iam/internal/bootstrap"
-	"gitee.com/zlx23/homehub/apps/iam/internal/exchange"
 	"gitee.com/zlx23/homehub/apps/iam/internal/httpapi"
 	"gitee.com/zlx23/homehub/apps/iam/internal/humanauth"
-	"gitee.com/zlx23/homehub/apps/iam/internal/machineadmin"
 	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/token"
-	"gitee.com/zlx23/homehub/apps/iam/manifests"
 	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
@@ -53,36 +48,6 @@ func main() {
 	}
 	defer store.Close()
 
-	openFGA, err := authz.NewClient(strings.TrimSpace(os.Getenv("HOMEHUB_IAM_OPENFGA_URL")))
-	if err != nil {
-		slog.Error("OpenFGA configuration is invalid", "error", err)
-		os.Exit(1)
-	}
-	authzCtx, authzCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	authorizationState, err := openFGA.EnsureModel(authzCtx, store, "homehub")
-	authzCancel()
-	if err != nil {
-		slog.Error("OpenFGA authorization model initialization failed", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("OpenFGA authorization model ready", "store_id", authorizationState.StoreID, "model_id", authorizationState.ModelID)
-
-	builtinManifests, err := manifests.Builtin()
-	if err != nil {
-		slog.Error("built-in service manifests are invalid", "error", err)
-		os.Exit(1)
-	}
-	for _, manifest := range builtinManifests {
-		if err := store.SyncManifest(context.Background(), manifest); err != nil {
-			slog.Error("service manifest synchronization failed", "service", manifest.ServiceID, "error", err)
-			os.Exit(1)
-		}
-		if err := openFGA.WriteRelationship(context.Background(), authorizationState, "realm:homehub", "realm", "service:"+manifest.ServiceID); err != nil {
-			slog.Error("service realm relationship synchronization failed", "service", manifest.ServiceID, "error", err)
-			os.Exit(1)
-		}
-	}
-
 	signingKeyFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_FILE"))
 	signingKeyID := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SIGNING_KEY_ID"))
 	if signingKeyFile == "" || signingKeyID == "" {
@@ -99,29 +64,12 @@ func main() {
 		slog.Error("IAM access token verifier initialization failed", "error", err)
 		os.Exit(1)
 	}
-	rootCredentialFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_ROOT_AGENT_TOKEN_FILE"))
-	if rootCredentialFile == "" {
-		slog.Error("IAM root agent credential file is required")
-		os.Exit(1)
-	}
-	bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	rootAgent, err := bootstrap.EnsureSystemAgent(bootstrapCtx, store, openFGA, authorizationState, rootCredentialFile)
-	bootstrapCancel()
-	if err != nil {
-		slog.Error("root agent bootstrap failed", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("root agent ready", "subject", rootAgent.Subject())
-	tokenExchange := exchange.New(store, openFGA, authorizationState, signer)
-	machineAdministrator := machineadmin.New(store, openFGA, authorizationState)
+
 	humanAuthCtx, humanAuthCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	humanAuthentication, err := humanauth.Open(humanAuthCtx, humanauth.Options{
 		DatabaseURL:        databaseURL,
 		EncryptionKeyFile:  strings.TrimSpace(os.Getenv("HOMEHUB_IAM_AUTH_ENCRYPTION_KEY_FILE")),
 		BootstrapTokenFile: strings.TrimSpace(os.Getenv("HOMEHUB_IAM_OWNER_SETUP_TOKEN_FILE")),
-		Authorization:      openFGA,
-		AuthorizationState: authorizationState,
-		Policies:           store,
 		Signer:             signer,
 		PasskeyRPID:        environmentOrDefault("HOMEHUB_IAM_PASSKEY_RP_ID", "zlx2.com"),
 		PasskeyOrigins:     splitCSV(environmentOrDefault("HOMEHUB_IAM_PASSKEY_ORIGINS", "https://zlx2.com")),
@@ -132,7 +80,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer humanAuthentication.Close()
-	allowedOrigins := splitCSV(environmentOrDefault("HOMEHUB_IAM_ALLOWED_ORIGINS", "https://zlx2.com,https://www.zlx2.com,https://111.229.205.99,http://127.0.0.1:18080"))
+
+	allowedOrigins := splitCSV(environmentOrDefault("HOMEHUB_IAM_ALLOWED_ORIGINS", "https://zlx2.com,https://www.zlx2.com,http://127.0.0.1:18080"))
 	secureCookies := !strings.EqualFold(strings.TrimSpace(os.Getenv("HOMEHUB_IAM_SECURE_COOKIES")), "false")
 
 	server := &http.Server{
@@ -140,15 +89,10 @@ func main() {
 		Handler: httpapi.New(httpapi.Options{
 			Version: version,
 			Readiness: func(ctx context.Context) error {
-				if err := store.Ping(ctx); err != nil {
-					return err
-				}
-				return openFGA.Ping(ctx)
+				return store.Ping(ctx)
 			},
 			JWKSet:         signer.JWKSet(),
-			Exchanger:      tokenExchange,
 			Verifier:       iamVerifier,
-			Machines:       machineAdministrator,
 			Humans:         humanAuthentication,
 			AllowedOrigins: allowedOrigins,
 			SecureCookies:  secureCookies,
@@ -197,7 +141,6 @@ func splitCSV(value string) []string {
 }
 
 func databaseURLFromEnvironment() (string, error) {
-	// Full URL from a file (existing behaviour)
 	if path := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL_FILE")); path != "" {
 		contents, err := os.ReadFile(path)
 		if err != nil {
@@ -208,11 +151,9 @@ func databaseURLFromEnvironment() (string, error) {
 		}
 		return "", errors.New("IAM database URL file is empty")
 	}
-	// Full URL from environment (existing behaviour, deprecated in favour of file)
 	if value := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_URL")); value != "" {
 		return value, nil
 	}
-	// Password-file based URL construction
 	if passwordFile := strings.TrimSpace(os.Getenv("HOMEHUB_IAM_DATABASE_PASSWORD_FILE")); passwordFile != "" {
 		passwordBytes, err := os.ReadFile(passwordFile)
 		if err != nil {

@@ -30,7 +30,6 @@ SECRETS_DIR = RUNTIME_DIR / "secrets"
 CONSUMER_OWNERSHIP: dict[str, tuple[int, int]] = {
     "postgres":         (70, 70),          # postgres user inside container
     "iam":              (65532, 65532),
-    "openfga":          (65532, 65532),
     "drop":             (10001, 10001),
     "cloudflared":      (65532, 65532),
     "telegram-bridge":  (65532, 65532),
@@ -40,10 +39,9 @@ CONSUMER_OWNERSHIP: dict[str, tuple[int, int]] = {
 # (BWS key, consumer_dir, filename, mode, required)
 # Each entry represents one materialized file.
 TARGETS: list[tuple[str, str, str, int, bool]] = [
-    # ── postgres (init scripts need all three DB passwords + superuser) ──
+    # ── postgres (init scripts need DB passwords + superuser) ──
     ("postgres_superuser_password", "postgres", "superuser_password",    0o400, True),
     ("iam_db_password",             "postgres", "iam_db_password",       0o400, True),
-    ("openfga_db_password",         "postgres", "openfga_db_password",   0o400, True),
     ("drop_db_password",            "postgres", "drop_db_password",      0o400, True),
     # ── iam ──
     ("iam_signing_key",             "iam",      "signing_key",           0o400, True),
@@ -51,8 +49,6 @@ TARGETS: list[tuple[str, str, str, int, bool]] = [
     ("auth_encryption_key",         "iam",      "auth_encryption_key",   0o400, True),
     ("owner_setup_token",           "iam",      "owner_setup_token",     0o400, True),
     ("iam_db_password",             "iam",      "database_password",     0o400, True),
-    # ── openfga ──
-    ("openfga_db_password",         "openfga",  "database_password",     0o400, True),
     # ── drop ──
     ("drop_db_password",            "drop",     "database_password",     0o400, True),
     # ── cloudflared ──

@@ -84,12 +84,10 @@ http:
     control-audience:
       headers:
         customRequestHeaders:
-          Authorization: ""
           X-HomeHub-Audience: homehub-control
     drop-audience:
       headers:
         customRequestHeaders:
-          Authorization: ""
           X-HomeHub-Audience: homehub-drop
     control-auth:
       forwardAuth:

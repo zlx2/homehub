@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { Check, ChevronRight, Clipboard, FileText, Gauge, HardDriveUpload, KeyRound, LogOut, Menu, Plus, Share2, Trash2, Upload, X } from 'lucide-react';
-import { drop, iam, type DropItem, type PasskeyCredential, type SessionState } from './api';
+import { Check, ChevronRight, Clipboard, FileText, Gauge, HardDriveUpload, KeyRound, LogOut, Menu, Monitor, Plus, Share2, Shield, Trash2, Upload, X } from 'lucide-react';
+import { drop, iam, type APIKeyInfo, type DropItem, type PasskeyCredential, type SessionInfo, type SessionState, type ShareInfo } from './api';
 import { DashboardHome } from './DashboardHome';
 import './security.css';
 
@@ -68,9 +68,14 @@ function Auth({ state, reload }: { state: SessionState; reload: () => Promise<vo
 
 function Layout({ state, path, navigate, logout, children }: { state: SessionState; path: string; navigate: (path: string) => void; logout: () => void; children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const nav = state.administrator ? [{ path: '/', title: '概览', icon: Gauge }, { path: '/drop', title: 'Drop', icon: HardDriveUpload }, { path: '/shares', title: '分享', icon: Share2 }, { path: '/security', title: '安全', icon: KeyRound }] : [{ path: '/drop', title: 'Drop', icon: HardDriveUpload }];
+  const nav = state.administrator ? [
+    { path: '/', title: '概览', icon: Gauge },
+    { path: '/drop', title: 'Drop', icon: HardDriveUpload },
+    { path: '/shares', title: '分享', icon: Share2 },
+    { path: '/security', title: '安全', icon: KeyRound },
+  ] : [{ path: '/drop', title: 'Drop', icon: HardDriveUpload }];
   return <div className="portal-shell">
-    <aside className={`sidebar ${open ? 'open' : ''}`}><button className="mobile-close" onClick={() => setOpen(false)}><X/></button><button className="brand plain" onClick={() => navigate(state.administrator ? '/' : '/drop')}><span className="brand-mark">H</span><span>HomeHub</span></button><nav>{nav.map((item) => <button key={item.path} className={`nav-item ${path === item.path ? 'active' : ''}`} onClick={() => { navigate(item.path); setOpen(false); }}><item.icon size={19}/>{item.title}</button>)}</nav><div className="sidebar-footer"><span className="connection-dot"/><div><strong>{state.principal?.display_name}</strong><span>{state.principal?.kind === 'guest' ? '访客会话' : 'HomeHub 管理员'}</span></div><button className="logout" onClick={logout} aria-label="退出"><LogOut size={17}/></button></div></aside>
+    <aside className={`sidebar ${open ? 'open' : ''}`}><button className="mobile-close" onClick={() => setOpen(false)}><X/></button><button className="brand plain" onClick={() => navigate(state.administrator ? '/' : '/drop')}><span className="brand-mark">H</span><span>HomeHub</span></button><nav>{nav.map((item) => <button key={item.path} className={`nav-item ${path === item.path ? 'active' : ''}`} onClick={() => { navigate(item.path); setOpen(false); }}><item.icon size={19}/>{item.title}</button>)}</nav><div className="sidebar-footer"><span className="connection-dot"/><div><strong>{state.principal?.display_name}</strong><span>HomeHub 管理员</span></div><button className="logout" onClick={logout} aria-label="退出"><LogOut size={17}/></button></div></aside>
     <main className="main-content"><header className="topbar"><button className="menu-button" onClick={() => setOpen(true)}><Menu/></button><div className="mobile-brand"><span className="brand-mark">H</span><strong>HomeHub</strong></div><span className="top-status"><i/>已连接</span></header>{children}</main>
     <nav className="mobile-navigation">{nav.map((item) => <button key={item.path} className={path === item.path ? 'active' : ''} onClick={() => navigate(item.path)}><item.icon size={20}/><span>{item.title}</span></button>)}</nav>
   </div>;
@@ -85,13 +90,119 @@ function Drop() {
 }
 
 function Shares() {
-  const [shares, setShares] = useState<any[]>([]); const [hours, setHours] = useState(24); const [created, setCreated] = useState('');
-  const load = () => iam.shares().then((x) => setShares(x.shares)); useEffect(() => { load(); }, []);
-  async function create() { const share = await iam.createShare(hours); const url = `https://zlx2.com/#share=${encodeURIComponent(share.token)}&path=${encodeURIComponent('/drop')}`; setCreated(url); await navigator.clipboard.writeText(url).catch(() => {}); await load(); }
-  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">DIRECT CAPABILITY</span><h1>快捷分享</h1><p>链接打开即用，不注册、不绑定。访客只能查看与下载 Drop 内容。</p></section><div className="share-builder"><select value={hours} onChange={(e) => setHours(Number(e.target.value))}><option value={1}>1 小时</option><option value={24}>1 天</option><option value={168}>7 天</option></select><button className="primary-button compact" onClick={create}><Share2 size={17}/>生成 Drop 链接</button></div>{created && <div className="created-link"><Check/><input readOnly value={created}/><button onClick={() => navigator.clipboard.writeText(created)}><Clipboard/></button></div>}<div className="share-list">{shares.map((share) => <article key={share.id}><div><strong>Drop · 只读</strong><small>{share.revoked_at ? '已撤销' : `${new Date(share.expires_at).toLocaleString()} 过期`}</small></div>{!share.revoked_at && <button onClick={() => iam.revokeShare(share.id).then(load)}>撤销</button>}</article>)}</div></div>;
+  const [shares, setShares] = useState<ShareInfo[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [created, setCreated] = useState('');
+  const load = () => iam.shares().then((x) => setShares(x.shares ?? []));
+  useEffect(() => { load(); }, []);
+
+  async function doCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const hours = Number(values.hours) || 24;
+    const body: any = {
+      share_type: values.share_type || 'service',
+      service_id: values.service_id || 'drop',
+      actions: (String(values.actions || 'drop.item.read,drop.item.list').split(',').map((s: string) => s.trim())),
+      expires_at: new Date(Date.now() + hours * 3600_000).toISOString(),
+    };
+    if (body.share_type === 'resource') {
+      body.resource_id = values.resource_id;
+    }
+    if (values.max_uses) body.max_uses = Number(values.max_uses);
+    try {
+      const result = await iam.createShare(body);
+      const link = `https://zlx2.com/#share=${encodeURIComponent(result.token)}&path=${encodeURIComponent('/drop')}`;
+      setCreated(link);
+      await navigator.clipboard.writeText(link).catch(() => {});
+      setShowCreate(false);
+      await load();
+    } catch (e) { alert(message(e)); }
+  }
+
+  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">DIRECT CAPABILITY</span><h1>分享</h1><p>创建 Drop 服务或单文件分享链接，可限制有效期和使用次数。</p></section>
+    <button className="primary-button compact" onClick={() => setShowCreate(!showCreate)} style={{ marginBottom: 16 }}><Plus size={17}/>创建分享</button>
+    {showCreate && <form className="form-stack share-form" onSubmit={doCreate} style={{ marginBottom: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
+      <div className="form-row">
+        <label>类型<select name="share_type" defaultValue="service"><option value="service">服务分享</option><option value="resource">资源分享</option></select></label>
+        <label>服务<select name="service_id" defaultValue="drop"><option value="drop">Drop</option></select></label>
+      </div>
+      <label>Actions<input name="actions" defaultValue="drop.item.read,drop.item.list" /></label>
+      <label>资源 ID (资源分享时填写)<input name="resource_id" placeholder="Drop item ID" /></label>
+      <div className="form-row">
+        <label>有效期<select name="hours" defaultValue="24"><option value="1">1 小时</option><option value="24">1 天</option><option value="168">7 天</option><option value="720">30 天</option></select></label>
+        <label>最大使用次数 (可选)<input name="max_uses" type="number" min="1" placeholder="无限制" /></label>
+      </div>
+      <button className="primary-button compact"><Share2 size={17}/>生成</button>
+    </form>}
+    {created && <div className="created-link"><Check/><input readOnly value={created}/><button onClick={() => navigator.clipboard.writeText(created)}><Clipboard/></button></div>}
+    <div className="share-list">{shares.length === 0 && <div className="empty"><Share2/><strong>还没有分享</strong></div>}{shares.map((share) => <article key={share.id}><div><strong>{share.service_id} · {share.share_type}</strong><small>{share.revoked_at ? '已撤销' : `${new Date(share.expires_at).toLocaleString()} 过期`} · 已用 {share.use_count}{share.max_uses ? `/${share.max_uses}` : ''}次</small><small className="actions-tag">{share.actions.join(', ')}</small></div>{!share.revoked_at && <button onClick={() => iam.revokeShare(share.id).then(load)}>撤销</button>}</article>)}</div></div>;
+}
+
+function SessionsTab() {
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [currentID, setCurrentID] = useState('');
+  const load = () => iam.sessions().then((x) => { setSessions(x.sessions ?? []); setCurrentID(x.current_session_id); });
+  useEffect(() => { load(); }, []);
+  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">DEVICE MANAGEMENT</span><h1>活跃会话</h1><p>这些设备当前已登录。你可以单独或一键撤销其他会话。</p></section>
+    {sessions.length > 1 && <button className="secondary-button" style={{ marginBottom: 16 }} onClick={() => iam.revokeOtherSessions().then(load)}><Trash2 size={16}/>撤销其他所有会话</button>}
+    <div className="session-list">{sessions.length === 0 && <div className="empty"><Monitor/><strong>无活跃会话</strong></div>}{sessions.map((s) => <article key={s.id} className={s.id === currentID ? 'current' : ''}><div><strong>{s.auth_methods?.join(', ') || 'Session'}</strong><small>{`${s.remote_ip || '未知 IP'} · 创建: ${new Date(s.created_at).toLocaleString()} · 最近: ${new Date(s.last_seen_at).toLocaleString()}`}</small></div><div className="session-actions">{s.id === currentID && <span className="badge">当前</span>}{s.revoked_at ? <span className="badge revoked">已撤销</span> : s.id !== currentID && <button onClick={() => iam.revokeSession(s.id).then(load)}>撤销</button>}</div></article>)}</div></div>;
+}
+
+function APIKeysTab() {
+  const [keys, setKeys] = useState<APIKeyInfo[]>([]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newToken, setNewToken] = useState('');
+  const load = () => iam.apiKeys().then((x) => setKeys(x.api_keys ?? []));
+  useEffect(() => { load(); }, []);
+
+  async function doCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const body: any = {
+      name: values.name,
+      kind: values.kind || 'agent',
+      scopes: (String(values.scopes || '*').split(',').map((s: string) => s.trim())),
+    };
+    if (values.expires_in_days) body.expires_in_days = Number(values.expires_in_days);
+    try {
+      const result = await iam.createAPIKey(body);
+      setNewToken(result.token);
+      setShowCreate(false);
+      await load();
+    } catch (e) { alert(message(e)); }
+  }
+
+  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">LONG-LIVED TOKENS</span><h1>API Keys</h1><p>用于脚本、iOS 快捷指令和 Hermes Agent 的长期访问令牌。</p></section>
+    <button className="primary-button compact" onClick={() => setShowCreate(!showCreate)} style={{ marginBottom: 16 }}><Plus size={17}/>创建 Key</button>
+    {showCreate && <form className="form-stack" onSubmit={doCreate} style={{ marginBottom: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
+      <label>名称<input name="name" placeholder="例如: Hermes Agent" required /></label>
+      <div className="form-row">
+        <label>类型<select name="kind" defaultValue="agent"><option value="agent">Agent</option><option value="device">Device</option><option value="service">Service</option></select></label>
+        <label>有效期天数 (可选)<input name="expires_in_days" type="number" min="1" placeholder="永久" /></label>
+      </div>
+      <label>Scopes (逗号分隔)<input name="scopes" defaultValue="*" /></label>
+      <button className="primary-button compact"><KeyRound size={17}/>创建</button>
+    </form>}
+    {newToken && <div className="created-link token-warning"><Check/><div><strong>保存此 Token！它只会显示一次。</strong></div><textarea readOnly value={newToken} rows={2}/><button onClick={() => { navigator.clipboard.writeText(newToken); setNewToken(''); }}><Clipboard/>已复制</button></div>}
+    <div className="key-list">{keys.length === 0 && <div className="empty"><KeyRound/><strong>还没有 API Key</strong></div>}{keys.map((key) => <article key={key.id}><div><strong>{key.name}</strong><small>{key.kind} · {key.scopes?.join(', ')}</small><small>{key.revoked_at ? '已撤销' : key.expires_at ? `${new Date(key.expires_at).toLocaleDateString()} 到期` : '永久有效'} · 创建于 {new Date(key.created_at).toLocaleDateString()}{key.last_used_at ? ` · 上次使用: ${new Date(key.last_used_at).toLocaleString()}` : ' · 未使用'}</small></div>{!key.revoked_at && <button onClick={() => iam.revokeAPIKey(key.id).then(load)}>撤销</button>}</article>)}</div></div>;
 }
 
 function Security() {
+  const [tab, setTab] = useState<'passkeys' | 'sessions' | 'api-keys'>('passkeys');
+  return <div className="security-page">
+    <div className="security-tabs">
+      <button className={tab === 'passkeys' ? 'active' : ''} onClick={() => setTab('passkeys')}><KeyRound size={17}/>通行密钥</button>
+      <button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}><Monitor size={17}/>会话</button>
+      <button className={tab === 'api-keys' ? 'active' : ''} onClick={() => setTab('api-keys')}><Shield size={17}/>API Keys</button>
+    </div>
+    {tab === 'passkeys' && <PasskeysTab/>}
+    {tab === 'sessions' && <SessionsTab/>}
+    {tab === 'api-keys' && <APIKeysTab/>}
+  </div>;
+}
+
+function PasskeysTab() {
   const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -108,7 +219,7 @@ function Security() {
     } catch (cause) { setError(message(cause)); } finally { setBusy(false); }
   }
 
-  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">ACCOUNT SECURITY</span><h1>登录与通行密钥</h1><p>把通行密钥保存到 Bitwarden 后，手机和电脑都可以直接确认登录。密码与动态验证码继续作为恢复方式。</p></section><section className="security-card"><div><span className="security-icon"><KeyRound/></span><h2>通行密钥</h2><p>只保存公钥凭据，Bitwarden 中的私钥不会发送到 HomeHub。</p></div><button className="primary-button compact" onClick={register} disabled={busy}><Plus size={17}/>{busy ? '正在创建…' : '添加通行密钥'}</button></section>{error && <p className="form-error">{error}</p>}<div className="passkey-list">{passkeys.length === 0 && <div className="empty"><KeyRound/><strong>还没有通行密钥</strong><span>添加后即可免输密码登录。</span></div>}{passkeys.map((passkey) => <article key={passkey.id}><div><strong>{passkey.name}</strong><small>创建于 {new Date(passkey.created_at).toLocaleString()}{passkey.last_used_at ? ` · 最近使用 ${new Date(passkey.last_used_at).toLocaleString()}` : ''}</small></div><button onClick={() => iam.deletePasskey(passkey.id).then(load)}><Trash2 size={16}/>删除</button></article>)}</div></div>;
+  return <div className="content-wrap narrow"><section className="page-title"><span className="eyebrow">ACCOUNT SECURITY</span><h1>通行密钥</h1><p>把通行密钥保存到 Bitwarden 后，手机和电脑都可以直接确认登录。密码与动态验证码继续作为恢复方式。</p></section><section className="security-card"><div><span className="security-icon"><KeyRound/></span><h2>添加通行密钥</h2><p>只保存公钥凭据，Bitwarden 中的私钥不会发送到 HomeHub。</p></div><button className="primary-button compact" onClick={register} disabled={busy}><Plus size={17}/>{busy ? '正在创建…' : '添加通行密钥'}</button></section>{error && <p className="form-error">{error}</p>}<div className="passkey-list">{passkeys.length === 0 && <div className="empty"><KeyRound/><strong>还没有通行密钥</strong><span>添加后即可免输密码登录。</span></div>}{passkeys.map((passkey) => <article key={passkey.id}><div><strong>{passkey.name}</strong><small>创建于 {new Date(passkey.created_at).toLocaleString()}{passkey.last_used_at ? ` · 最近使用 ${new Date(passkey.last_used_at).toLocaleString()}` : ''}</small></div><button onClick={() => iam.deletePasskey(passkey.id).then(load)}><Trash2 size={16}/>删除</button></article>)}</div></div>;
 }
 
 function formatBytes(size: number) { if (size < 1024) return `${size} B`; if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`; return `${(size / 1024 ** 2).toFixed(1)} MB`; }

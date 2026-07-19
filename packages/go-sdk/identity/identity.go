@@ -20,8 +20,8 @@ const (
 )
 
 var (
-	principalID  = regexp.MustCompile(`^(human|guest|device|node|workload|agent):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
-	permissionID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}$`)
+	principalID  = regexp.MustCompile(`^(human|share):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	permissionID = regexp.MustCompile(`^(\*|[a-z][a-z0-9-]{0,62}(\.[a-z][a-z0-9-]{0,62}){0,2})$`)
 	audienceID   = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
 )
 

@@ -15,13 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"gitee.com/zlx23/homehub/apps/iam/internal/domain"
 	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
 var (
-	audienceName = regexp.MustCompile(`^homehub-[a-z][a-z0-9-]{0,54}$`)
+	audienceName = regexp.MustCompile(`^homehub(-[a-z][a-z0-9-]{0,54})?$`)
 	partyName    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	subjectName  = regexp.MustCompile(`^(human|share):[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+	scopeName    = regexp.MustCompile(`^(\*|[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}(\.[a-z][a-z0-9-]{0,62})?)$`)
 )
 
 type Signer struct {
@@ -79,23 +80,21 @@ func (signer *Signer) JWKSet() map[string]any {
 }
 
 func (signer *Signer) Issue(request IssueRequest) (string, identity.Claims, error) {
-	if signer == nil || !audienceName.MatchString(request.Audience) || !partyName.MatchString(request.AuthorizedParty) ||
-		!partyName.MatchString(request.Realm) || len(request.Permissions) == 0 {
+	if signer == nil || !audienceName.MatchString(request.Audience) || request.AuthorizedParty == "" ||
+		request.Realm == "" || len(request.Permissions) == 0 {
 		return "", identity.Claims{}, errors.New("invalid access token request")
 	}
-	if _, err := domain.ParsePrincipalID(request.Subject); err != nil {
+	if !subjectName.MatchString(request.Subject) {
 		return "", identity.Claims{}, errors.New("invalid access token subject")
 	}
-	if request.Actor != "" {
-		if _, err := domain.ParsePrincipalID(request.Actor); err != nil {
-			return "", identity.Claims{}, errors.New("invalid access token actor")
-		}
+	if request.Actor != "" && !subjectName.MatchString(request.Actor) {
+		return "", identity.Claims{}, errors.New("invalid access token actor")
 	}
 	permissions := make([]string, 0, len(request.Permissions))
 	seen := make(map[string]struct{}, len(request.Permissions))
 	for _, value := range request.Permissions {
-		if _, err := domain.ParsePermission(value); err != nil {
-			return "", identity.Claims{}, err
+		if !scopeName.MatchString(value) {
+			return "", identity.Claims{}, fmt.Errorf("invalid scope: %q", value)
 		}
 		if _, duplicate := seen[value]; duplicate {
 			continue

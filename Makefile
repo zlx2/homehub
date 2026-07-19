@@ -31,7 +31,7 @@ down: ## Stop all services without deleting data
 	@docker compose $(COMPOSE_ARGS) down
 
 logs: ## Follow all service logs
-	@docker compose $(COMPOSE_ARGS) logs -f iam control drop telegram-bridge openfga postgres portal
+	@docker compose $(COMPOSE_ARGS) logs -f iam control drop telegram-bridge postgres portal
 
 ai-up: ## Start AI Gateway (optional profile)
 	@echo "Checking AI provider keys..."

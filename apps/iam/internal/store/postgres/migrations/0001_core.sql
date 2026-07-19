@@ -1,58 +1,43 @@
-CREATE TABLE realms (
+-- HomeHub IAM v2: Simplified single-owner auth
+-- Replaces OpenFGA-based authorization with simple scope-based API keys and shares.
+
+CREATE TABLE owner (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug text NOT NULL UNIQUE,
+    username text NOT NULL UNIQUE,
+    username_normalized text NOT NULL UNIQUE,
     display_name text NOT NULL,
+    password_hash text NOT NULL,
+    totp_cipher bytea NOT NULL,
+    totp_nonce bytea NOT NULL,
     status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (slug ~ '^[a-z][a-z0-9-]{0,62}$')
+    CHECK (username ~ '^[A-Za-z0-9_.-]{3,64}$')
 );
 
-CREATE TABLE principals (
+CREATE TABLE owner_bootstrap_tokens (
+    token_hash bytea PRIMARY KEY,
+    expires_at timestamptz NOT NULL,
+    consumed_at timestamptz
+);
+
+CREATE TABLE pending_owner_setups (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    realm_id uuid NOT NULL REFERENCES realms(id) ON DELETE RESTRICT,
-    kind text NOT NULL CHECK (kind IN ('human', 'guest', 'device', 'node', 'workload', 'agent')),
+    bootstrap_token_hash bytea NOT NULL REFERENCES owner_bootstrap_tokens(token_hash) ON DELETE CASCADE,
+    username text NOT NULL,
+    username_normalized text NOT NULL,
     display_name text NOT NULL,
-    status text NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'disabled', 'revoked')),
-    attributes jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    deleted_at timestamptz
+    password_hash text NOT NULL,
+    totp_cipher bytea NOT NULL,
+    totp_nonce bytea NOT NULL,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX principals_realm_kind_idx ON principals(realm_id, kind, status) WHERE deleted_at IS NULL;
-
-CREATE TABLE external_accounts (
-    provider text NOT NULL,
-    external_subject text NOT NULL,
-    principal_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    attributes jsonb NOT NULL DEFAULT '{}'::jsonb,
-    linked_at timestamptz NOT NULL DEFAULT now(),
-    last_seen_at timestamptz,
-    PRIMARY KEY (provider, external_subject),
-    UNIQUE (provider, principal_id)
-);
-
-CREATE TABLE credentials (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    principal_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    kind text NOT NULL CHECK (kind IN ('password', 'passkey', 'api_key', 'client_assertion', 'recovery')),
-    label text NOT NULL,
-    status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'revoked')),
-    secret_hash bytea,
-    public_key bytea,
-    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    last_used_at timestamptz,
-    expires_at timestamptz,
-    revoked_at timestamptz,
-    CHECK (secret_hash IS NOT NULL OR public_key IS NOT NULL)
-);
-CREATE INDEX credentials_principal_idx ON credentials(principal_id, kind, status);
-CREATE UNIQUE INDEX credentials_secret_hash_idx ON credentials(secret_hash) WHERE secret_hash IS NOT NULL;
+CREATE INDEX pending_owner_setups_expiry_idx ON pending_owner_setups(expires_at);
 
 CREATE TABLE sessions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    principal_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    owner_id uuid NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
     token_hash bytea NOT NULL UNIQUE,
     csrf_hash bytea NOT NULL,
     authentication_methods text[] NOT NULL DEFAULT '{}',
@@ -65,79 +50,71 @@ CREATE TABLE sessions (
     remote_ip inet,
     user_agent_hash bytea
 );
-CREATE INDEX sessions_principal_idx ON sessions(principal_id, created_at DESC);
+CREATE INDEX sessions_owner_idx ON sessions(owner_id, created_at DESC);
 CREATE INDEX sessions_active_expiry_idx ON sessions(idle_expires_at, absolute_expires_at) WHERE revoked_at IS NULL;
 
-CREATE TABLE service_audiences (
-    audience text PRIMARY KEY,
-    service_id text NOT NULL UNIQUE,
-    manifest_version integer NOT NULL CHECK (manifest_version > 0),
-    max_token_ttl_seconds integer NOT NULL CHECK (max_token_ttl_seconds BETWEEN 30 AND 900),
-    enabled boolean NOT NULL DEFAULT true,
-    manifest jsonb NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (audience ~ '^homehub-[a-z][a-z0-9-]{0,54}$'),
-    CHECK (service_id ~ '^[a-z][a-z0-9-]{0,62}$')
-);
-
-CREATE TABLE permissions (
-    name text PRIMARY KEY,
-    audience text NOT NULL REFERENCES service_audiences(audience) ON DELETE CASCADE,
-    description text NOT NULL,
-    risk text NOT NULL DEFAULT 'normal' CHECK (risk IN ('normal', 'sensitive', 'dangerous')),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    deprecated_at timestamptz,
-    CHECK (name ~ '^[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}\.[a-z][a-z0-9-]{0,62}$')
-);
-
-CREATE TABLE delegations (
+CREATE TABLE api_keys (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    realm_id uuid NOT NULL REFERENCES realms(id) ON DELETE CASCADE,
-    delegator_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    actor_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    subject_id uuid NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    audience text NOT NULL REFERENCES service_audiences(audience) ON DELETE CASCADE,
-    permissions text[] NOT NULL,
-    can_redelegate boolean NOT NULL DEFAULT false,
-    not_before timestamptz NOT NULL DEFAULT now(),
-    expires_at timestamptz NOT NULL,
+    owner_id uuid NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    kind text NOT NULL CHECK (kind IN ('agent', 'device', 'service')),
+    token_hash bytea NOT NULL UNIQUE,
+    scopes text[] NOT NULL DEFAULT '{}',
+    expires_at timestamptz,
     revoked_at timestamptz,
-    reason text,
     created_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (cardinality(permissions) > 0),
-    CHECK (expires_at > not_before)
+    last_used_at timestamptz,
+    last_used_ip inet
 );
-CREATE INDEX delegations_actor_active_idx ON delegations(actor_id, audience, expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX api_keys_owner_idx ON api_keys(owner_id);
+CREATE UNIQUE INDEX api_keys_active_name_idx ON api_keys(owner_id, name) WHERE revoked_at IS NULL;
 
-CREATE TABLE signing_keys (
-    kid text PRIMARY KEY,
-    algorithm text NOT NULL CHECK (algorithm = 'EdDSA'),
-    public_key bytea NOT NULL,
-    private_key_reference text NOT NULL,
-    status text NOT NULL CHECK (status IN ('staged', 'active', 'retiring', 'retired')),
-    not_before timestamptz NOT NULL,
-    not_after timestamptz NOT NULL,
+CREATE TABLE shares (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id uuid NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
+    token_hash bytea NOT NULL UNIQUE,
+    share_type text NOT NULL CHECK (share_type IN ('service', 'resource')),
+    service_id text NOT NULL,
+    resource_type text,
+    resource_id text,
+    actions text[] NOT NULL DEFAULT '{}',
+    expires_at timestamptz NOT NULL,
+    max_uses integer,
+    use_count integer NOT NULL DEFAULT 0,
+    revoked_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
-    CHECK (not_after > not_before)
+    CHECK (expires_at > created_at)
 );
-CREATE UNIQUE INDEX signing_keys_one_active_idx ON signing_keys(status) WHERE status = 'active';
+CREATE INDEX shares_active_idx ON shares(expires_at) WHERE revoked_at IS NULL;
+
+CREATE TABLE webauthn_credentials (
+    credential_id bytea PRIMARY KEY,
+    owner_id uuid NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    credential_cipher bytea NOT NULL,
+    credential_nonce bytea NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    last_used_at timestamptz
+);
+CREATE INDEX webauthn_credentials_owner_idx ON webauthn_credentials(owner_id);
+
+CREATE TABLE webauthn_ceremonies (
+    token_hash bytea PRIMARY KEY,
+    owner_id uuid REFERENCES owner(id) ON DELETE CASCADE,
+    kind text NOT NULL CHECK (kind IN ('registration', 'login')),
+    session_cipher bytea NOT NULL,
+    session_nonce bytea NOT NULL,
+    expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX webauthn_ceremonies_expiry_idx ON webauthn_ceremonies(expires_at);
 
 CREATE TABLE audit_events (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    realm_id uuid REFERENCES realms(id) ON DELETE SET NULL,
-    subject_id uuid REFERENCES principals(id) ON DELETE SET NULL,
-    actor_id uuid REFERENCES principals(id) ON DELETE SET NULL,
     event_type text NOT NULL,
     outcome text NOT NULL CHECK (outcome IN ('success', 'denied', 'failure')),
-    audience text,
-    resource text,
-    request_id text,
     remote_ip inet,
     details jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX audit_events_realm_time_idx ON audit_events(realm_id, created_at DESC);
-CREATE INDEX audit_events_actor_time_idx ON audit_events(actor_id, created_at DESC);
-
-INSERT INTO realms(slug, display_name) VALUES ('homehub', 'HomeHub');
+CREATE INDEX audit_events_type_time_idx ON audit_events(event_type, created_at DESC);

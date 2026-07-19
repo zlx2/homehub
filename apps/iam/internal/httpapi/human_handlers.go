@@ -2,21 +2,18 @@ package httpapi
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	storepostgres "gitee.com/zlx23/homehub/apps/iam/internal/store/postgres"
 	"gitee.com/zlx23/homehub/apps/iam/internal/humanauth"
+	"gitee.com/zlx23/homehub/packages/go-sdk/identity"
 )
 
-const (
-	sessionCookieName = "hh_session"
-	csrfCookieName    = "hh_csrf"
-)
+// ── Session ──
 
 func (server *Server) session(response http.ResponseWriter, request *http.Request) {
 	if server.humans == nil {
@@ -33,12 +30,59 @@ func (server *Server) session(response http.ResponseWriter, request *http.Reques
 		writeJSON(response, http.StatusOK, map[string]any{"authenticated": false, "setup_required": setupRequired})
 		return
 	}
-	administrator, _ := server.humans.IsAdministrator(request.Context(), principal)
 	response.Header().Set("Cache-Control", "no-store")
 	writeJSON(response, http.StatusOK, map[string]any{
-		"authenticated": true, "setup_required": false, "principal": principal, "administrator": administrator,
+		"authenticated": true, "setup_required": false, "principal": principal, "administrator": true,
 	})
 }
+
+// ── Sessions management ──
+
+func (server *Server) listSessions(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	sessions, err := server.humans.ListSessions(request.Context(), principal)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"sessions": sessions, "current_session_id": principal.SessionID})
+}
+
+func (server *Server) revokeSession(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	sessionID := request.PathValue("id")
+	revoked, err := server.humans.RevokeSessionByID(request.Context(), principal, sessionID)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	if !revoked {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) revokeOtherSessions(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	count, err := server.humans.RevokeOtherSessions(request.Context(), principal, principal.SessionID)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"revoked": count})
+}
+
+// ── Setup and Login ──
 
 func (server *Server) beginSetup(response http.ResponseWriter, request *http.Request) {
 	if !server.validOrigin(request) || server.humans == nil {
@@ -127,8 +171,7 @@ func (server *Server) login(response http.ResponseWriter, request *http.Request)
 }
 
 func (server *Server) logout(response http.ResponseWriter, request *http.Request) {
-	principal, token, ok := server.requireSessionAndCSRF(response, request)
-	_ = principal
+	_, token, ok := server.requireSessionAndCSRF(response, request)
 	if !ok {
 		return
 	}
@@ -137,81 +180,79 @@ func (server *Server) logout(response http.ResponseWriter, request *http.Request
 	response.WriteHeader(http.StatusNoContent)
 }
 
-func (server *Server) sessionToken(response http.ResponseWriter, request *http.Request) {
+// ── API Keys ──
+
+func (server *Server) listAPIKeys(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	keys, err := server.humans.ListAPIKeys(request.Context(), principal)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"api_keys": keys})
+}
+
+func (server *Server) createAPIKey(response http.ResponseWriter, request *http.Request) {
 	principal, _, ok := server.requireSessionAndCSRF(response, request)
 	if !ok {
 		return
 	}
 	var input struct {
-		Audience    string   `json:"audience"`
-		Permissions []string `json:"permissions"`
+		Name    string   `json:"name"`
+		Kind    string   `json:"kind"`
+		Scopes  []string `json:"scopes"`
+		ExpiresInDays *int `json:"expires_in_days,omitempty"`
 	}
 	if !decodeJSON(response, request, &input) {
 		return
 	}
-	issued, err := server.humans.Issue(request.Context(), principal, input.Audience, input.Permissions, false)
+	var expiresAt *time.Time
+	if input.ExpiresInDays != nil && *input.ExpiresInDays > 0 {
+		t := time.Now().UTC().Add(time.Duration(*input.ExpiresInDays) * 24 * time.Hour)
+		expiresAt = &t
+	}
+	keyID, tokenValue, err := server.humans.CreateAPIKey(request.Context(), principal, input.Name, input.Kind, input.Scopes, expiresAt)
 	if err != nil {
-		writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_api_key"})
 		return
 	}
 	response.Header().Set("Cache-Control", "no-store")
-	writeJSON(response, http.StatusOK, issued)
+	writeJSON(response, http.StatusCreated, map[string]any{
+		"id":    keyID,
+		"token": tokenValue,
+		"name":  input.Name,
+		"kind":  input.Kind,
+	})
 }
 
-func (server *Server) edgeAuthorize(response http.ResponseWriter, request *http.Request) {
-	if server.humans == nil {
+func (server *Server) revokeAPIKey(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	revoked, err := server.humans.RevokeAPIKey(request.Context(), principal, request.PathValue("id"))
+	if err != nil {
 		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
 		return
 	}
-	method := strings.ToUpper(strings.TrimSpace(request.Header.Get("X-Forwarded-Method")))
-	if method != "" && method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions && !server.validOrigin(request) {
-		writeJSON(response, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+	if !revoked {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
-	principal, err := server.humanPrincipal(request)
-	if err != nil {
-		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
-		return
-	}
-	audience := strings.TrimSpace(request.Header.Get("X-HomeHub-Audience"))
-	issued, err := server.humans.Issue(request.Context(), principal, audience, nil, true)
-	if err != nil {
-		writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
-		return
-	}
-	response.Header().Set("Authorization", "Bearer "+issued.AccessToken)
-	response.Header().Set("X-HomeHub-Subject", principal.Subject)
-	response.Header().Set("Cache-Control", "no-store")
 	response.WriteHeader(http.StatusNoContent)
 }
 
-func (server *Server) createShare(response http.ResponseWriter, request *http.Request) {
-	principal, _, ok := server.requireSessionAndCSRF(response, request)
-	if !ok || !server.requireAdministrator(response, request, principal) {
-		return
-	}
-	var input struct {
-		Grants    []humanauth.Grant `json:"grants"`
-		ExpiresAt time.Time         `json:"expires_at"`
-	}
-	if !decodeJSON(response, request, &input) {
-		return
-	}
-	share, err := server.humans.CreateShare(request.Context(), principal, input.Grants, input.ExpiresAt, remoteIP(request))
-	if err != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_share"})
-		return
-	}
-	response.Header().Set("Cache-Control", "no-store")
-	writeJSON(response, http.StatusCreated, share)
-}
+// ── Shares ──
 
 func (server *Server) listShares(response http.ResponseWriter, request *http.Request) {
-	principal, err := server.humanPrincipal(request)
-	if err != nil || !server.requireAdministrator(response, request, principal) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
 		return
 	}
-	shares, err := server.humans.ListShares(request.Context())
+	shares, err := server.humans.ListShares(request.Context(), principal)
 	if err != nil {
 		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
 		return
@@ -219,12 +260,34 @@ func (server *Server) listShares(response http.ResponseWriter, request *http.Req
 	writeJSON(response, http.StatusOK, map[string]any{"shares": shares})
 }
 
-func (server *Server) revokeShare(response http.ResponseWriter, request *http.Request) {
+func (server *Server) createShare(response http.ResponseWriter, request *http.Request) {
 	principal, _, ok := server.requireSessionAndCSRF(response, request)
-	if !ok || !server.requireAdministrator(response, request, principal) {
+	if !ok {
 		return
 	}
-	revoked, err := server.humans.RevokeShare(request.Context(), principal, request.PathValue("id"), remoteIP(request))
+	var input humanauth.ShareInput
+	if !decodeJSON(response, request, &input) {
+		return
+	}
+	shareID, token, err := server.humans.CreateShare(request.Context(), principal, input)
+	if err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_share"})
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	writeJSON(response, http.StatusCreated, map[string]any{
+		"id":    shareID,
+		"token": token,
+		"share_type": input.ShareType,
+	})
+}
+
+func (server *Server) revokeShare(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	revoked, err := server.humans.RevokeShare(request.Context(), principal, request.PathValue("id"))
 	if err != nil {
 		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
 		return
@@ -256,6 +319,225 @@ func (server *Server) redeemShare(response http.ResponseWriter, request *http.Re
 	writeJSON(response, http.StatusCreated, map[string]any{"authenticated": true, "principal": session.Principal, "administrator": false})
 }
 
+// ── Passkey handlers ──
+
+func (server *Server) beginPasskeyLogin(response http.ResponseWriter, request *http.Request) {
+	if !server.validOrigin(request) || server.humans == nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+		return
+	}
+	options, token, err := server.humans.BeginPasskeyLogin(request.Context())
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"publicKey": options, "ceremony_token": token})
+}
+
+func (server *Server) finishPasskeyLogin(response http.ResponseWriter, request *http.Request) {
+	if !server.validOrigin(request) || server.humans == nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+		return
+	}
+	ceremonyToken := request.Header.Get("X-HomeHub-Ceremony-Token")
+	if ceremonyToken == "" {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "missing_ceremony_token"})
+		return
+	}
+	session, err := server.humans.FinishPasskeyLogin(request.Context(), ceremonyToken, remoteIP(request), request.UserAgent(), request)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "invalid_passkey"})
+		return
+	}
+	server.setSessionCookies(response, session)
+	writeJSON(response, http.StatusOK, map[string]any{"authenticated": true, "principal": session.Principal, "administrator": true})
+}
+
+func (server *Server) beginPasskeyRegistration(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	options, token, err := server.humans.BeginPasskeyRegistration(request.Context(), principal)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"publicKey": options, "ceremony_token": token})
+}
+
+func (server *Server) finishPasskeyRegistration(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	name := request.Header.Get("X-HomeHub-Passkey-Name")
+	if name == "" {
+		name = "Bitwarden Passkey"
+	}
+	ceremonyToken := request.Header.Get("X-HomeHub-Ceremony-Token")
+	if err := server.humans.FinishPasskeyRegistration(request.Context(), principal, ceremonyToken, name, request); err != nil {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_passkey"})
+		return
+	}
+	writeJSON(response, http.StatusCreated, map[string]any{"registered": true})
+}
+
+func (server *Server) listPasskeys(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	passkeys, err := server.humans.ListPasskeys(request.Context(), principal)
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	writeJSON(response, http.StatusOK, map[string]any{"passkeys": passkeys})
+}
+
+func (server *Server) deletePasskey(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	deleted, err := server.humans.DeletePasskey(request.Context(), principal, request.PathValue("id"))
+	if err != nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	if !deleted {
+		writeJSON(response, http.StatusNotFound, map[string]string{"error": "not_found"})
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
+}
+
+// ── Edge Authorize (Traefik ForwardAuth) ──
+
+func (server *Server) edgeAuthorize(response http.ResponseWriter, request *http.Request) {
+	if server.humans == nil {
+		writeJSON(response, http.StatusServiceUnavailable, map[string]string{"error": "temporarily_unavailable"})
+		return
+	}
+	method := strings.ToUpper(strings.TrimSpace(request.Header.Get("X-Forwarded-Method")))
+	if method != "" && method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions && !server.validOrigin(request) {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "invalid_origin"})
+		return
+	}
+
+	audience := strings.TrimSpace(request.Header.Get("X-HomeHub-Audience"))
+	if audience == "" {
+		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "missing_audience"})
+		return
+	}
+
+	// Try API key first (Bearer token)
+	bearerToken, _ := identity.BearerToken(request)
+	if bearerToken != "" && strings.HasPrefix(bearerToken, "hh_") {
+		tokenHash := storepostgres.HashCredential(bearerToken)
+		key, err := server.humans.AuthenticateAPIKey(request.Context(), tokenHash)
+		if err == nil {
+			issued, err := server.humans.IssueAPIKeyJWT(request.Context(), key, audience)
+			if err != nil {
+				writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
+				return
+			}
+			response.Header().Set("Authorization", "Bearer "+issued.AccessToken)
+			response.Header().Set("X-HomeHub-Subject", "human:"+key.OwnerID)
+			response.Header().Set("Cache-Control", "no-store")
+			response.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+
+	// Try session cookie
+	principal, err := server.humanPrincipal(request)
+	if err != nil {
+		// Try share session
+		cookie, cookieErr := request.Cookie(sessionCookieName)
+		if cookieErr == nil && cookie.Value != "" {
+			// Check if it's a share session (guest principal)
+			principal, err = server.humans.Authenticate(request.Context(), cookie.Value)
+			if err != nil {
+				writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
+				return
+			}
+		} else {
+			writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "authentication_required"})
+			return
+		}
+	}
+
+	issued, err := server.humans.IssueJWT(request.Context(), principal, audience, nil)
+	if err != nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
+		return
+	}
+	response.Header().Set("Authorization", "Bearer "+issued.AccessToken)
+	response.Header().Set("X-HomeHub-Subject", "human:"+principal.ID)
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
+}
+
+// ── Token exchange compat (legacy) ──
+
+func (server *Server) tokenExchangeCompat(response http.ResponseWriter, request *http.Request) {
+	credential, err := identity.BearerToken(request)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
+		return
+	}
+	// Only support API key exchange now
+	if !strings.HasPrefix(credential, "hh_") {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
+		return
+	}
+	tokenHash := storepostgres.HashCredential(credential)
+	key, err := server.humans.AuthenticateAPIKey(request.Context(), tokenHash)
+	if err != nil {
+		writeJSON(response, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
+		return
+	}
+	var input struct {
+		Audience    string   `json:"audience"`
+		Permissions []string `json:"permissions"`
+	}
+	decodeJSON(response, request, &input)
+	issued, err := server.humans.IssueAPIKeyJWT(request.Context(), key, input.Audience)
+	if err != nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	writeJSON(response, http.StatusOK, issued)
+}
+
+// ── Session token (for frontend) ──
+
+func (server *Server) sessionToken(response http.ResponseWriter, request *http.Request) {
+	principal, _, ok := server.requireSessionAndCSRF(response, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		Audience    string   `json:"audience"`
+		Permissions []string `json:"permissions"`
+	}
+	if !decodeJSON(response, request, &input) {
+		return
+	}
+	issued, err := server.humans.IssueJWT(request.Context(), principal, input.Audience, input.Permissions)
+	if err != nil {
+		writeJSON(response, http.StatusForbidden, map[string]string{"error": "insufficient_permission"})
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	writeJSON(response, http.StatusOK, issued)
+}
+
+// ── Helpers ──
+
 func (server *Server) humanPrincipal(request *http.Request) (humanauth.Principal, error) {
 	cookie, err := request.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" || server.humans == nil {
@@ -284,23 +566,19 @@ func (server *Server) requireSessionAndCSRF(response http.ResponseWriter, reques
 	return principal, sessionCookie.Value, true
 }
 
-func (server *Server) requireAdministrator(response http.ResponseWriter, request *http.Request, principal humanauth.Principal) bool {
-	allowed, err := server.humans.IsAdministrator(request.Context(), principal)
-	if err != nil || !allowed {
-		writeJSON(response, http.StatusForbidden, map[string]string{"error": "administrator_required"})
-		return false
-	}
-	return true
-}
-
 func (server *Server) validOrigin(request *http.Request) bool {
 	origin := strings.TrimSpace(request.Header.Get("Origin"))
+	if origin == "" {
+		// Allow same-origin requests (no Origin header)
+		return true
+	}
 	_, ok := server.origins[origin]
-	return origin != "" && ok
+	return ok
 }
 
 func (server *Server) setSessionCookies(response http.ResponseWriter, session humanauth.Session) {
-	common := http.Cookie{Path: "/", Secure: server.secureCookies, SameSite: http.SameSiteStrictMode, MaxAge: int((7 * 24 * time.Hour).Seconds())}
+	maxAge := int((180 * 24 * time.Hour).Seconds())
+	common := http.Cookie{Path: "/", Secure: server.secureCookies, SameSite: http.SameSiteStrictMode, MaxAge: maxAge}
 	sessionCookie := common
 	sessionCookie.Name, sessionCookie.Value, sessionCookie.HttpOnly = sessionCookieName, session.Token, true
 	csrfCookie := common
@@ -313,21 +591,6 @@ func (server *Server) clearSessionCookies(response http.ResponseWriter) {
 	for _, name := range []string{sessionCookieName, csrfCookieName} {
 		http.SetCookie(response, &http.Cookie{Name: name, Value: "", Path: "/", Secure: server.secureCookies, HttpOnly: name == sessionCookieName, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	}
-}
-
-func decodeJSON(response http.ResponseWriter, request *http.Request, target any) bool {
-	request.Body = http.MaxBytesReader(response, request.Body, 64<<10)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
-		return false
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		writeJSON(response, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
-		return false
-	}
-	return true
 }
 
 func remoteIP(request *http.Request) string {
